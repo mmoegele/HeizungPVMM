@@ -1,0 +1,9 @@
+# Hardware Interfaces
+RPi.GPIO>=0.7.1,<1.0.0         # GPIO control
+smbus2>=0.4.2,<1.0.0           # I2C interface
+spidev>=3.5,<4.0               # SPI interface
+w1thermsensor>=2.0.0,<3.0.0    # 1-Wire sensors
+pyownet>=0.10.0,<1.0.0         # OWFS interface
+
+# System Integration
+systemd-python>=234,<235       # systemd integration
