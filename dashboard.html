@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heating System Control Dashboard</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #2c3e50;
+        }
+
+        .header {
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            margin: 0 0 1rem 0;
+            font-size: 2rem;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #95a5a6;
+        }
+
+        .status-indicator.online { background: #2ecc71; }
+        .status-indicator.offline { background: #e74c3c; }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: #fff;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border: 1px solid #e9ecef;
+        }
+
+        .card h2 {
+            margin: 0 0 1.5rem 0;
+            color: #2c3e50;
+            font-size: 1.25rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #3498db;
+        }
+
+        .output-grid {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .output-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .output-item:hover {
+            border-color: #3498db;
+            transform: translateY(-1px);
+        }
+
+        .output-item.active {
+            background: #e8f5e8;
+            border-color: #27ae60;
+        }
+
+        .output-info {
+            flex: 1;
+        }
+
+        .output-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 0.25rem;
+        }
+
+        .output-description {
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+
+        .output-toggle {
+            width: 60px;
+            height: 30px;
+            border-radius: 15px;
+            background: #e74c3c;
+            cursor: pointer;
+            position: relative;
+            transition: background-color 0.3s;
+        }
+
+        .output-toggle.active {
+            background: #27ae60;
+        }
+
+        .output-toggle::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: white;
+            transition: transform 0.3s;
+        }
+
+        .output-toggle.active::after {
+            transform: translateX(30px);
+        }
+
+        .temp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .temp-item {
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .temp-name {
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.9;
+        }
+
+        .temp-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+        }
+
+        .temp-description {
+            font-size: 0.75rem;
+            opacity: 0.8;
+        }
+
+        .controller-status {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .controller-item {
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+
+        .controller-name {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .controller-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-weight: 500;
+            padding: 0.5rem;
+            background: #fee;
+            border-radius: 4px;
+            margin-top: 0.5rem;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .status-bar {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔥 Heating System Control Dashboard</h1>
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-indicator" id="system-status"></div>
+                <span>System Status</span>
+            </div>
+            <div class="status-item">
+                <div class="status-indicator" id="api-status"></div>
+                <span>API Connection</span>
+            </div>
+            <div class="status-item">
+                <div class="status-indicator" id="controller-status"></div>
+                <span>Controllers</span>
+            </div>
+            <div class="status-item">
+                <span id="last-update">Last Update: --</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        <div class="card">
+            <h2>🌡️ Temperature Sensors</h2>
+            <div class="temp-grid" id="temperature-sensors">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⚙️ System Controllers</h2>
+            <div class="controller-status" id="controller-status-grid">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>🔌 Control Outputs</h2>
+            <div class="output-grid" id="control-outputs">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Digital Inputs</h2>
+            <div class="output-grid" id="digital-inputs">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        const API_KEY = localStorage.getItem('api_key') || '';
+        
+        // Update interval in milliseconds
+        const UPDATE_INTERVAL = 3000;
+
+        // State cache
+        let systemState = {
+            temperatures: {},
+            outputs: {},
+            inputs: {},
+            controllers: {}
+        };
+
+        // Configuration mapping for outputs
+        const OUTPUT_CONFIG = {
+            'puffer_lade_pumpe': { board: 0, port: 6, description: 'Buffer Charging Pump' },
+            'mischer_1_auf': { board: 0, port: 1, description: 'Mixer 1 Open' },
+            'mischer_1_zu': { board: 0, port: 0, description: 'Mixer 1 Close' },
+            'mischer_2_auf': { board: 0, port: 4, description: 'Mixer 2 Open' },
+            'mischer_2_zu': { board: 0, port: 3, description: 'Mixer 2 Close' },
+            'wt_pumpe': { board: 1, port: 7, description: 'Heat Exchanger Pump' },
+            'bhkw_start': { board: 0, port: 5, description: 'BHKW Start Signal' },
+            'heizstab_1': { board: 1, port: 0, description: 'Heating Element 1' },
+            'heizstab_2': { board: 1, port: 1, description: 'Heating Element 2' },
+            'heizstab_3': { board: 1, port: 2, description: 'Heating Element 3' }
+        };
+
+        // Temperature sensor descriptions
+        const TEMP_SENSORS = {
+            'puffer_k_mitte': 'Konrad Buffer Middle',
+            'puffer_k_rueck': 'Konrad Buffer Return',
+            'puffer_k_vorlauf': 'Konrad Buffer Forward',
+            'puffer_m_vorlauf': 'Michael Buffer Forward',
+            'puffer_m_mitte': 'Michael Buffer Middle',
+            'puffer_m_rueck': 'Michael Buffer Return',
+            'solar_vorlauf': 'Solar Forward',
+            'solar_ruecklauf': 'Solar Return',
+            'bhkw_vorlauf': 'BHKW Forward Temperature',
+            'mischer_fussboden': 'Floor Heating Mixer Temperature',
+            'mischer_heizung': 'Radiator Heating Mixer Temperature'
+        };
+
+        // Create temperature sensor display
+        function createTemperatureElement(sensorId, temperature, description) {
+            const div = document.createElement('div');
+            div.className = 'temp-item';
+            div.innerHTML = `
+                <div class="temp-name">${sensorId}</div>
+                <div class="temp-value">${temperature.toFixed(1)}°C</div>
+                <div class="temp-description">${description}</div>
+            `;
+            return div;
+        }
+
+        // Create output control element
+        function createOutputElement(outputId, config, state) {
+            const div = document.createElement('div');
+            div.className = `output-item ${state ? 'active' : ''}`;
+            div.innerHTML = `
+                <div class="output-info">
+                    <div class="output-name">${outputId}</div>
+                    <div class="output-description">${config.description}</div>
+                </div>
+                <div class="output-toggle ${state ? 'active' : ''}" onclick="toggleOutput('${outputId}', ${config.board}, ${config.port})"></div>
+            `;
+            return div;
+        }
+
+        // Create input display element
+        function createInputElement(board, port, state, description) {
+            const div = document.createElement('div');
+            div.className = 'output-item';
+            div.innerHTML = `
+                <div class="output-info">
+                    <div class="output-name">Input ${board}-${port}</div>
+                    <div class="output-description">${description || 'Digital Input'}</div>
+                </div>
+                <div class="output-toggle ${state ? 'active' : ''}"></div>
+            `;
+            return div;
+        }
+
+        // Create controller status element
+        function createControllerElement(controllerId, status) {
+            const div = document.createElement('div');
+            div.className = 'controller-item';
+            
+            let details = '';
+            if (controllerId === 'heat_exchanger') {
+                details = `
+                    <div>Pump: ${status.is_pump_active ? 'ON' : 'OFF'}</div>
+                    <div>BHKW: ${status.bhkw_active ? 'Active' : 'Inactive'}</div>
+                    <div>Temp: ${status.last_temperature ? status.last_temperature.toFixed(1) + '°C' : 'N/A'}</div>
+                    <div>Target: ${status.target_temperature}°C</div>
+                `;
+            } else if (controllerId === 'mixer') {
+                details = '<div>Multiple mixers managed</div>';
+            } else if (controllerId === 'buffer_load') {
+                details = `
+                    <div>Pump: ${status.is_pump_active ? 'ON' : 'OFF'}</div>
+                    <div>Source: ${status.source_sensor}</div>
+                    <div>Target: ${status.target_sensor}</div>
+                `;
+            }
+
+            div.innerHTML = `
+                <div class="controller-name">${controllerId.replace('_', ' ').toUpperCase()}</div>
+                <div class="controller-details">${details}</div>
+                ${status.error_state ? `<div class="error-message">${status.error_state}</div>` : ''}
+            `;
+            return div;
+        }
+
+        // Toggle output state
+        async function toggleOutput(outputId, board, port) {
+            const currentState = systemState.outputs[`${board}-${port}`] || 0;
+            const newState = currentState === 1 ? 0 : 1;
+
+            try {
+                const response = await fetch(`${API_BASE}/io/output/${board}/${port}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({ state: newState })
+                });
+
+                if (!response.ok) throw new Error('Failed to toggle output');
+
+                // Update immediately in UI
+                systemState.outputs[`${board}-${port}`] = newState;
+                updateOutputDisplay();
+            } catch (error) {
+                console.error('Error toggling output:', error);
+                alert('Failed to toggle output: ' + error.message);
+            }
+        }
+
+        // Update temperature display
+        function updateTemperatureDisplay() {
+            const container = document.getElementById('temperature-sensors');
+            container.innerHTML = '';
+
+            for (const [sensorId, temperature] of Object.entries(systemState.temperatures)) {
+                const description = TEMP_SENSORS[sensorId] || 'Temperature Sensor';
+                const element = createTemperatureElement(sensorId, temperature, description);
+                container.appendChild(element);
+            }
+        }
+
+        // Update output display
+        function updateOutputDisplay() {
+            const container = document.getElementById('control-outputs');
+            container.innerHTML = '';
+
+            for (const [outputId, config] of Object.entries(OUTPUT_CONFIG)) {
+                const state = systemState.outputs[`${config.board}-${config.port}`] || 0;
+                const element = createOutputElement(outputId, config, state);
+                container.appendChild(element);
+            }
+        }
+
+        // Update input display
+        function updateInputDisplay() {
+            const container = document.getElementById('digital-inputs');
+            container.innerHTML = '';
+
+            // Show inputs for both boards
+            for (let board = 0; board < 2; board++) {
+                for (let port = 0; port < 8; port++) {
+                    const state = systemState.inputs[`${board}-${port}`] || 0;
+                    const element = createInputElement(board, port, state, `Board ${board} Input ${port}`);
+                    container.appendChild(element);
+                }
+            }
+        }
+
+        // Update controller display
+        function updateControllerDisplay() {
+            const container = document.getElementById('controller-status-grid');
+            container.innerHTML = '';
+
+            for (const [controllerId, status] of Object.entries(systemState.controllers)) {
+                const element = createControllerElement(controllerId, status);
+                container.appendChild(element);
+            }
+        }
+
+        // Fetch temperatures
+        async function fetchTemperatures() {
+            try {
+                const response = await fetch(`${API_BASE}/temperatures`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    systemState.temperatures = data.temperatures || {};
+                }
+            } catch (error) {
+                console.error('Error fetching temperatures:', error);
+            }
+        }
+
+        // Fetch IO states
+        async function fetchIOStates() {
+            try {
+                const response = await fetch(`${API_BASE}/io/status`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    systemState.outputs = data.outputs || {};
+                    systemState.inputs = data.inputs || {};
+                    
+                    // Update system status indicators
+                    document.getElementById('system-status').className = 
+                        'status-indicator ' + (data.system_ok ? 'online' : 'offline');
+                    document.getElementById('api-status').className = 'status-indicator online';
+                } else {
+                    throw new Error('Failed to fetch IO status');
+                }
+            } catch (error) {
+                console.error('Error fetching IO states:', error);
+                document.getElementById('api-status').className = 'status-indicator offline';
+            }
+        }
+
+        // Fetch system health
+        async function fetchSystemHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('controller-status').className = 
+                        'status-indicator ' + (data.status === 'healthy' ? 'online' : 'offline');
+                }
+            } catch (error) {
+                console.error('Error fetching system health:', error);
+                document.getElementById('controller-status').className = 'status-indicator offline';
+            }
+        }
+
+        // Main update function
+        async function updateDashboard() {
+            await Promise.all([
+                fetchTemperatures(),
+                fetchIOStates(),
+                fetchSystemHealth()
+            ]);
+
+            updateTemperatureDisplay();
+            updateOutputDisplay();
+            updateInputDisplay();
+            updateControllerDisplay();
+
+            // Update last update time
+            document.getElementById('last-update').textContent = 
+                'Last Update: ' + new Date().toLocaleTimeString();
+        }
+
+        // Initialize dashboard
+        async function initialize() {
+            console.log('Initializing heating system dashboard...');
+            await updateDashboard();
+            setInterval(updateDashboard, UPDATE_INTERVAL);
+        }
+
+        // Start the dashboard when page loads
+        document.addEventListener('DOMContentLoaded', initialize);
+    </script>
+</body>
+</html>

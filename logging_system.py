@@ -10,11 +10,12 @@ class HeatingSystemLogger:
     def __init__(self, log_level: str = "INFO", log_dir: Optional[Path] = None):
         self.log_level = log_level
         self.log_dir = log_dir or Path("/var/log/heating")
-        self.setup_logging()
-        
+        # Create logger objects first to ensure attributes exist
         self.main_logger = logging.getLogger("heating.main")
         self.audit_logger = logging.getLogger("heating.audit")
         self.safety_logger = logging.getLogger("heating.safety")
+        # Then configure logging handlers and levels
+        self.setup_logging()
         
     def setup_logging(self) -> None:
         formatter = logging.Formatter(
@@ -58,6 +59,25 @@ class HeatingSystemLogger:
         audit_handler.setFormatter(formatter)
         self.audit_logger.addHandler(audit_handler)
         self.audit_logger.propagate = False
+    
+    # Delegate standard logging methods to main_logger
+    def debug(self, msg: str, *args, **kwargs) -> None:
+        self.main_logger.debug(msg, *args, **kwargs)
+        
+    def info(self, msg: str, *args, **kwargs) -> None:
+        self.main_logger.info(msg, *args, **kwargs)
+        
+    def warning(self, msg: str, *args, **kwargs) -> None:
+        self.main_logger.warning(msg, *args, **kwargs)
+        
+    def error(self, msg: str, *args, **kwargs) -> None:
+        self.main_logger.error(msg, *args, **kwargs)
+        
+    def critical(self, msg: str, *args, **kwargs) -> None:
+        self.main_logger.critical(msg, *args, **kwargs)
+        
+    def exception(self, msg: str, *args, **kwargs) -> None:
+        self.main_logger.exception(msg, *args, **kwargs)
     
     def log_system_startup(self, version: str, config_file: str) -> None:
         self.main_logger.info(f"SYSTEM_STARTUP: Version {version}, Config: {config_file}")

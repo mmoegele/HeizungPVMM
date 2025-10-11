@@ -1,20 +1,16 @@
 # Modern Heating System Configuration - FIXED VERSION with EVCC Integration
 # ===========================================================================
 
-# System Information
+# System Configuration
 system:
   name: "Heating Controller"
   version: "2.0.0"
-  location: "Main Heating System"
 
 # Logging Configuration
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
   log_file: "/var/log/heating/heating_system.log"
   audit_log: "/var/log/heating/audit.log"
-  safety_log: "/var/log/heating/safety.log"
-  max_file_size: "10MB"
-  backup_count: 5
 
 # Temperature Settings
 temperature:
@@ -22,20 +18,25 @@ temperature:
   temperature_tolerance: 1.0  # Tolerance for temperature control
   charge_temperature_difference: 3.0  # Required temp difference for charging
 
+# Buffer Loading Configuration
+buffer_load:
+  min_temperature_difference: 2.0  # Minimum temperature difference to start transfer (°C)
+  hysteresis: 1.0                 # Hysteresis to prevent rapid cycling (°C)
+  min_run_time: 60                # Minimum time pump runs once started (seconds)
+  min_off_time: 120               # Minimum time pump stays off between runs (seconds)
+  check_interval: 30              # How often to check temperatures (seconds)
+  source_sensor: "puffer_k_mitte" # Source buffer temperature sensor
+  target_sensor: "puffer_m_mitte" # Target buffer temperature sensor
+
 # Safety Limits
 safety:
   max_temperature: 85.0  # Maximum allowed temperature
   min_temperature: -20.0  # Minimum valid temperature
-  max_temperature_difference: 50.0  # Max difference between sensors
-  max_pump_runtime_minutes: 120  # Max continuous pump runtime
-  watchdog_timeout_seconds: 60  # Watchdog timeout
-  emergency_shutdown_delay: 5  # Seconds before emergency shutdown
 
 # Sensor Configuration
 sensors:
   one_wire_mount_point: "/mnt/1wire"
   cache_duration_seconds: 2
-  read_timeout_seconds: 5
   retry_attempts: 3
   retry_delay_seconds: 0.1
   
@@ -71,28 +72,49 @@ sensors:
       description: "Michael Buffer Return"
       uuid: "39aee5e8-010c-447b-b89a-4fce8eaa9f02"
       
-    bhkw_vorlauf:
-      path: "/mnt/1wire/28.22F4AA040000"
-      description: "BHKW Forward Temperature"
-      uuid: "7cce5210-900a-4168-b455-5593c7be8554"
+    solar_vorlauf:
+      path: "/mnt/1wire/28.76234B050000"
+      description: "Solar Forward"
+      uuid: "7a935d0f-2c04-4158-82ce-006295005c64"
       
     solar_ruecklauf:
       path: "/mnt/1wire/28.F0EA49050000"
       description: "Solar Return"
       uuid: "9ec9aaf0-c6ac-4b84-91de-50c563040837"
       
-    solar_vorlauf:
-      path: "/mnt/1wire/28.76234B050000"
-      description: "Solar Forward"
-      uuid: "7a935d0f-2c04-4158-82ce-006295005c64"
+    bhkw_vorlauf:
+      path: "/mnt/1wire/28.22F4AA040000"
+      description: "BHKW Forward Temperature"
+      uuid: "7cce5210-900a-4168-b455-5593c7be8554"
+      
+    mischer_fussboden:
+      path: "/mnt/1wire/28.97A14A050000"
+      description: "Floor Heating Mixer Temperature"
+      uuid: "8d7e5f23-9c12-4b56-a891-d42e6f3a8b15"
+      
+    mischer_heizung:
+      path: "/mnt/1wire/28.70204A050000"
+      description: "Radiator Heating Mixer Temperature"
+      uuid: "9f8e7d65-4321-4b56-a891-c31e5f2b7a04"
+
+# HTTP Service Configuration
+http_service:
+  enable: true
+  host: "0.0.0.0"
+  port: 8080
+  debug: false
+  require_auth: false
+  api_key: ""  # Will be auto-generated if empty
+  rate_limit: "100 per hour"
+  enable_cors: true
+  dashboard_file: "dashboard.html"
 
 # Hardware Configuration
 hardware:
   piface:
     board_count: 2
-    initialization_delay: 1.0
-    
-  # Pump and Valve Mappings
+  
+  # Output Mappings
   outputs:
     puffer_lade_pumpe:
       board: 0
@@ -120,8 +142,8 @@ hardware:
       description: "Mixer 2 Close"
       
     wt_pumpe:
-      board: 0
-      port: 2
+      board: 1
+      port: 7
       description: "Heat Exchanger Pump"
       
     bhkw_start:
@@ -134,45 +156,21 @@ hardware:
       port: 0
       description: "Heating Element 1"
       power_kw: 2.0
-      max_runtime_minutes: 60
       
     heizstab_2:
       board: 1
       port: 1
       description: "Heating Element 2"
       power_kw: 2.0
-      max_runtime_minutes: 60
       
     heizstab_3:
       board: 1
       port: 2
       description: "Heating Element 3"
       power_kw: 2.0
-      max_runtime_minutes: 60
-      
-  # Input Mappings
-  inputs:
-    bhkw_status:
-      board: 0
-      port: 0
-      description: "BHKW Running Status"
-      
-    stromzaehler_michael:
-      board: 0
-      port: 1
-      description: "Michael Power Meter Pulse"
-      
-    stromzaehler_konrad:
-      board: 0
-      port: 2
-      description: "Konrad Power Meter Pulse"
 
 # Mixer Control Configuration
 mixers:
-  enable_fixed_temperature: true
-  pump_activation_temperature: 20.0
-  temperature_tolerance: 1.0
-  
   mixer_controllers:
     fussboden:
       sensor: "mischer_fussboden"
@@ -186,210 +184,37 @@ mixers:
       auf_port: "mischer_2_auf"
       zu_port: "mischer_2_zu"
 
-# BHKW (Combined Heat & Power) Configuration
-bhkw:
-  enable_auto_start: true
-  start_power_threshold_kw: 2.0
-  max_buffer_temperature: 45.0
-  min_start_interval_minutes: 5
-  power_averaging_window: 10
-  power_calculation_factor: 3.6
-  
-  status_input: "bhkw_status"
-  start_output: "bhkw_start"
-  start_pulse_duration: 0.5
-  
-  working_hours_uuid: "f6e65070-52aa-11e4-aa25-bf18e7fe6e4f"
-
 # Heat Exchanger Configuration
 heat_exchanger:
-  enable: true
-  target_temperature: 65.0
-  min_temperature: 50.0
-  min_pump_interval: 0.15
-  control_interval: 10
-  
+  target_temperature: 65.0  # Maximum desired temperature
+  min_temperature: 50.0    # Minimum threshold temperature
+  min_pump_interval: 0.15  # How long pump stays on in each cycle (seconds)
+  max_interval: 1.0        # Maximum wait between cycles when cold (seconds)
+  min_interval: 0.1        # Minimum wait between cycles when hot (seconds)
+  control_interval: 1      # How often to check temperature (seconds)
   pump_port: "wt_pumpe"
   temperature_sensor: "bhkw_vorlauf"
 
-# Heating Elements Configuration
-heating_elements:
-  enable: true
-  auto_control: true
-  priority_order: ["heizstab_1", "heizstab_2", "heizstab_3"]
-  
-  # Temperature thresholds for automatic control
-  start_temperature: 35.0
-  stop_temperature: 45.0
-  
-  # Safety limits
-  max_simultaneous: 2
-  max_runtime_minutes: 60
-  cooldown_minutes: 15
-  
-  # Power management
-  load_balancing: true
-  staged_startup: true
-  startup_delay_seconds: 30
-  
-  # Individual element configuration
-  elements:
-    heizstab_1:
-      board: 1
-      port: 0
-      power_kw: 2.0
-      priority: 1
-      temperature_sensor: "puffer_k_mitte"
-      
-    heizstab_2:
-      board: 1
-      port: 1
-      power_kw: 2.0
-      priority: 2
-      temperature_sensor: "puffer_m_mitte"
-      
-    heizstab_3:
-      board: 1
-      port: 2
-      power_kw: 2.0
-      priority: 3
-      temperature_sensor: "puffer_k_mitte"
-
-# Power Monitoring Configuration
-power_monitoring:
-  enable: true
-  pulse_inputs:
-    - "stromzaehler_michael"
-    - "stromzaehler_konrad"
-    
-  power_thresholds:
-    - 0.5
-    - 1.5
-    - 2.5
-    - 4.0
-    - 6.0
-    
-  heating_element_ports:
-    - board: 1
-      port: 0
-      description: "Heating Element 1"
-    - board: 1
-      port: 1
-      description: "Heating Element 2"
-    - board: 1
-      port: 2
-      description: "Heating Element 3"
-
-# Network Configuration
-network:
-  volkszaehler:
-    enable: true
-    base_url: "http://web165.webgo24-server57.de/volkszaehler.org/htdocs/middleware.php"
-    timeout: 10
-    retry_attempts: 3
-    retry_delay: 1.0
-    
-  tcp_server:
-    enable: true
-    host: ""
-    port: 9999
-    
-  rest_api:
-    enable: true
-    host: "0.0.0.0"
-    port: 8080
-    debug: false
-    require_auth: true
-    api_key: ""  # Will be auto-generated if empty
-    rate_limit: "100 per hour"
-    enable_cors: true
-    max_request_size: 1048576
-    max_heizstab_runtime: 3600
-
-# EVCC Integration Configuration - FIXED AND COMPLETE
+# EVCC Integration Configuration
 evcc:
-  enable: true  # Set to false to disable EVCC integration
-  base_url: "http://192.168.191.45:7070"  # Update with your EVCC IP address
+  enable: true
+  base_url: "http://192.168.191.45:7070"
   timeout: 10
-  update_interval: 30  # seconds between EVCC updates
-  
-  # Battery and power management settings
-  min_battery_soc_for_heating: 50.0      # % - Only heat when battery > 50%
-  max_battery_soc_for_aggressive: 80.0   # % - Use aggressive mode when battery > 80%
-  
-  # Temperature safety settings
-  max_temperature_for_heating: 70.0      # °C - Maximum temperature before blocking heating
-  temperature_sensors_to_check:          # Temperature sensors to monitor for safety
-    - "puffer_k_mitte"     # Konrad buffer middle
-    - "puffer_k_vorlauf"   # Konrad buffer forward
-    - "puffer_k_rueck"     # Konrad buffer return
-    - "puffer_m_mitte"     # Michael buffer middle
-    - "puffer_m_vorlauf"   # Michael buffer forward
-    - "puffer_m_rueck"     # Michael buffer return
-  
-  # Power thresholds for heating elements (Watts)
+  update_interval: 30
+  min_battery_soc_for_heating: 50.0
+  max_battery_soc_for_aggressive: 80.0
+  max_temperature_for_heating: 70.0
   heating_thresholds:
-    - 2000.0  # 1st heating element at 2kW surplus
-    - 4000.0  # 2nd heating element at 4kW surplus  
-    - 6000.0  # 3rd heating element at 6kW surplus
-  
-  # Control parameters
-  min_surplus_duration: 120     # seconds - stable surplus before starting heating
-  max_heating_elements: 3       # maximum number of elements to control
-  heating_element_power: 2000.0 # Watts per heating element
-  
-  # Hysteresis to prevent cycling
-  turn_on_hysteresis: 200.0   # W extra needed to turn on
-  turn_off_hysteresis: 300.0  # W deficit before turning off
-  
-  # Priority order for heating elements (highest priority first)
-  element_priority:
-    heizstab_1: 1  # Highest priority
-    heizstab_2: 2  # Medium priority  
-    heizstab_3: 3  # Lowest priority
-  
-  # Advanced EVCC settings
-  retry_attempts: 3
-  retry_delay: 1.0
-  cache_duration: 5  # seconds to cache EVCC data
-  
-  # Logging for EVCC operations
-  log_evcc_decisions: true
-  log_heating_actions: true
+    - 2000.0
+    - 4000.0
+    - 6000.0
+  min_surplus_duration: 120
+  heating_element_power: 2000.0
+  turn_on_hysteresis: 200.0
+  turn_off_hysteresis: 300.0
+  cache_duration: 5
 
-# Timing Configuration
-timing:
-  main_loop_interval: 5  # seconds
-  temperature_read_interval: 300  # seconds
-  mixer_control_interval: 20  # seconds
-  safety_check_interval: 10  # seconds
-  log_upload_interval: 300  # seconds
-  heartbeat_interval: 30  # seconds
-
-# Development and Testing
+# Development Settings
 development:
-  demo_mode: false
-  mock_hardware: false
-  simulation_mode: false
-  test_sensor_values:
-    puffer_k_mitte: 45.0
-    puffer_k_rueck: 40.0
-    puffer_m_vorlauf: 35.0
-    puffer_m_rueck: 30.0
-
-# Maintenance Configuration  
-maintenance:
-  auto_backup_config: true
-  backup_interval_hours: 24
-  backup_retention_days: 30
-  
-  health_check:
-    enable: true
-    interval_minutes: 15
-    disk_usage_threshold: 80
-    memory_usage_threshold: 80
-    
-  notifications:
-    enable: false
-    email_alerts: []
-    webhook_url: ""
+  demo_mode: true
+  mock_hardware: true

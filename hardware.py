@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Hardware Control Module - PiFace and GPIO Management"""
 
+__all__ = ['HeatingHardware', 'create_hardware_controller']
+
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any
-from gpio_fix import apply_gpio_patch
+from gpio import apply_gpio_patch
 
 _gpio_patch_applied = apply_gpio_patch()
 
-class HardwareController(ABC):
+class HeatingHardware(ABC):
     @abstractmethod
     def turn_on(self, board: int, port: int) -> bool:
         pass
@@ -29,7 +31,7 @@ class HardwareController(ABC):
     def dispose(self) -> None:
         pass
 
-class MockHardwareController(HardwareController):
+class MockHardwareController(HeatingHardware):
     def __init__(self, board_count: int, logger: logging.Logger):
         self.logger = logger
         self.board_count = board_count
@@ -75,7 +77,7 @@ class MockHardwareController(HardwareController):
             self.boards = []
         self.logger.info("PiFace controller disposed")
 
-class PiFaceController(HardwareController):
+class PiFaceController(HeatingHardware):
     def __init__(self, board_count: int, logger: logging.Logger, mock_mode: bool = False):
         self.logger = logger
         self.board_count = board_count
@@ -89,6 +91,10 @@ class PiFaceController(HardwareController):
     
     def _initialize_boards(self):
         try:
+            if self.mock_mode:
+                self.logger.info("Running in demo/mock mode - using simulated hardware")
+                return
+            
             if self.gpio_patch_applied:
                 self.logger.info("🔧 GPIO patch applied - PiFace should initialize cleanly")
             
@@ -179,7 +185,20 @@ class PiFaceController(HardwareController):
                     pass
         self.logger.info("PiFace controller disposed")
 
-def create_hardware_controller(board_count: int, logger: logging.Logger, mock_mode: bool = False):
+def create_hardware_controller(board_count: int, logger: logging.Logger, mock_mode: bool = False) -> HeatingHardware:
+    """
+    Create appropriate hardware controller based on mode. Returns a HeatingHardware instance.
+    
+    Args:
+        board_count: Number of PiFace boards to control
+        logger: Logger instance for output
+        mock_mode: If True, uses simulated hardware (default in demo mode)
+        
+    Returns:
+        HeatingHardware: Either a real PiFace controller or a mock controller for testing
+    """
+    if mock_mode:
+        logger.info("Demo mode active - using simulated hardware controller")
     return PiFaceController(board_count, logger, mock_mode)
 
 if __name__ == "__main__":

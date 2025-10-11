@@ -1,0 +1,16 @@
+[Unit]
+Description=Heizungssteuerung Service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=pi
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/home/pi/Documents/HeizungPVMM
+ExecStart=/home/pi/Documents/HeizungPVMM/.venv/bin/python3 main.py
+
+[Install]
+WantedBy=multi-user.target
