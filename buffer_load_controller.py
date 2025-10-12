@@ -9,7 +9,7 @@ Activates when Konrad's buffer is warmer than Michael's buffer to transfer heat.
 import logging
 import threading
 import time
-from typing import Optional, Dict
+from typing import Optional, Dict, Union, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from hardware import HeatingHardware
@@ -25,7 +25,7 @@ class BufferLoadConfig:
     check_interval: int = 30                # How often to check temperatures
     source_sensor: str = "puffer_k_mitte"   # Source buffer sensor (Konrad)
     target_sensor: str = "puffer_m_mitte"   # Target buffer sensor (Michael)
-    pump_port: tuple = (0, 6)               # Board and port for pump
+    pump_port: Union[str, Tuple[int, int]] = "puffer_lade_pumpe"  # Port reference or (Board, Port) tuple
 
 class BufferLoadController:
     """Controls buffer loading pump based on temperature differences"""
@@ -225,10 +225,6 @@ class BufferLoadController:
 def create_buffer_load_controller(config, hardware, sensor_manager, logger=None) -> BufferLoadController:
     """Factory function to create a buffer load controller"""
     
-    # Get pump board and port from config
-    pump_board = config.buffer_load.pump_board
-    pump_port = config.buffer_load.pump_port
-    
     buffer_config = BufferLoadConfig(
         min_temperature_difference=config.buffer_load.min_temperature_difference,
         hysteresis=config.buffer_load.hysteresis,
@@ -237,7 +233,7 @@ def create_buffer_load_controller(config, hardware, sensor_manager, logger=None)
         check_interval=config.buffer_load.check_interval,
         source_sensor=config.buffer_load.source_sensor,
         target_sensor=config.buffer_load.target_sensor,
-        pump_port=(pump_board, pump_port)  # Combine into tuple
+        pump_port=config.buffer_load.pump_port  # Use port reference as-is
     )
     
     return BufferLoadController(

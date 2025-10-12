@@ -97,7 +97,24 @@ class HeatingSystemMain:
                 self.logger,
                 self.config.mock_hardware
             )
+            
+            # Enhanced hardware status display
             print(f"✅ Hardware controller initialized ({self.config.piface_board_count} boards)")
+            if hasattr(self.hardware, 'run_board_diagnostics'):
+                diag = self.hardware.run_board_diagnostics()
+                print(f"   🔧 GPIO patch: {'✅' if diag['gpio_patch_applied'] else '❌'}")
+                print(f"   🎭 Mock mode: {'✅' if diag['mock_mode'] else '❌'}")
+                
+                # Show board status
+                board_status = []
+                for board_id, status in diag['boards'].items():
+                    if status['available']:
+                        board_status.append(f"B{board_id}:✅")
+                    else:
+                        board_status.append(f"B{board_id}:❌")
+                print(f"   📡 Boards: {' '.join(board_status)}")
+            else:
+                print(f"   ⚠️  No diagnostics available for {type(self.hardware).__name__}")
             
             self.sensor_manager = create_sensor_manager(self.config, self.logger_system)
             print("✅ Sensor manager initialized")
@@ -248,10 +265,12 @@ class HeatingSystemMain:
                     # Log mixer states periodically
                     mixer_states = self.mixer_manager.get_states()
                     for mixer_id, state in mixer_states.items():
-                        self.logger.info(
-                            f"Mixer {mixer_id}: {state['current_temperature']:.1f}°C "
-                            f"-> {state['target_temperature']:.1f}°C"
-                        )
+                        # Skip non-mixer entries like 'update_interval'
+                        if isinstance(state, dict) and 'current_temperature' in state:
+                            self.logger.info(
+                                f"Mixer {mixer_id}: {state['current_temperature']:.1f}°C "
+                                f"-> {state['target_temperature']:.1f}°C"
+                            )
                 
                 loop_count += 1
                 time.sleep(self.config.main_loop_interval)
@@ -260,9 +279,18 @@ class HeatingSystemMain:
             print("\n🛑 Shutdown requested by user")
             return self.shutdown()
         except Exception as e:
+            import traceback
             print(f"❌ Fatal error: {e}")
             if self.logger:
                 self.logger.critical(f"Fatal error: {e}")
+                # Only show full traceback in debug mode
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    traceback.print_exc()
+                    self.logger.critical(f"Full traceback: {traceback.format_exc()}")
+            else:
+                # If no logger available, check if debug mode by looking at config
+                if hasattr(self, 'config') and hasattr(self.config, 'logging') and self.config.logging.level == "DEBUG":
+                    traceback.print_exc()
             return 1
     
     def shutdown(self) -> int:

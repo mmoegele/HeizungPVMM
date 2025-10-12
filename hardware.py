@@ -11,6 +11,46 @@ from gpio import apply_gpio_patch
 _gpio_patch_applied = apply_gpio_patch()
 
 class HeatingHardware(ABC):
+    def __init__(self):
+        # Default hardware configuration mapping
+        self.port_mapping = {
+            'puffer_lade_pumpe': (0, 6),
+            'mischer_1_auf': (0, 1),
+            'mischer_1_zu': (0, 0),
+            'mischer_2_auf': (0, 4),
+            'mischer_2_zu': (0, 3),
+            'wt_pumpe': (1, 7),
+            'bhkw_start': (0, 5),
+            'heizstab_1': (1, 0),
+            'heizstab_2': (1, 1),
+            'heizstab_3': (1, 2)
+        }
+    
+    def set_output(self, port_ref, state: bool) -> bool:
+        """Set output state using either (board, port) tuple or string reference"""
+        if isinstance(port_ref, str):
+            if port_ref in self.port_mapping:
+                board, port = self.port_mapping[port_ref]
+            else:
+                raise ValueError(f"Unknown port reference: {port_ref}")
+        elif isinstance(port_ref, tuple) and len(port_ref) == 2:
+            board, port = port_ref
+        else:
+            raise ValueError(f"Invalid port reference: {port_ref}")
+        
+        if state:
+            return self.turn_on(board, port)
+        else:
+            return self.turn_off(board, port)
+    
+    def get_output(self, board: int, port: int) -> bool:
+        """Get current output state - override in subclasses"""
+        return False
+    
+    def get_input(self, board: int, port: int) -> bool:
+        """Get input state - alias for read_input"""
+        return self.read_input(board, port)
+    
     @abstractmethod
     def turn_on(self, board: int, port: int) -> bool:
         pass
@@ -33,6 +73,7 @@ class HeatingHardware(ABC):
 
 class MockHardwareController(HeatingHardware):
     def __init__(self, board_count: int, logger: logging.Logger):
+        super().__init__()
         self.logger = logger
         self.board_count = board_count
         self.output_states = {}
@@ -49,6 +90,9 @@ class MockHardwareController(HeatingHardware):
     
     def read_input(self, board: int, port: int) -> bool:
         return False
+    
+    def get_output(self, board: int, port: int) -> bool:
+        return self.output_states.get((board, port), False)
     
     def get_board_status(self) -> Dict[int, Dict[str, Any]]:
         return {i: {"available": True, "mock": True} for i in range(self.board_count)}
@@ -79,6 +123,7 @@ class MockHardwareController(HeatingHardware):
 
 class PiFaceController(HeatingHardware):
     def __init__(self, board_count: int, logger: logging.Logger, mock_mode: bool = False):
+        super().__init__()
         self.logger = logger
         self.board_count = board_count
         self.mock_mode = mock_mode
@@ -148,6 +193,17 @@ class PiFaceController(HeatingHardware):
                 return bool(self.boards[board].input_pins[port].value)
         except Exception as e:
             self.logger.error(f"Failed to read input board {board}, port {port}: {e}")
+        return False
+    
+    def get_output(self, board: int, port: int) -> bool:
+        if self.mock_mode:
+            return self.mock_controller.get_output(board, port)
+        
+        try:
+            if self.boards[board]:
+                return bool(self.boards[board].output_pins[port].value)
+        except Exception as e:
+            self.logger.error(f"Failed to get output state board {board}, port {port}: {e}")
         return False
     
     def get_board_status(self) -> Dict[int, Dict[str, Any]]:

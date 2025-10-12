@@ -103,6 +103,23 @@ class BufferLoadConfig:
     pump_port: int = 6                      # Port number for pump
 
 @dataclass
+class EVCCConfig:
+    """EVCC integration configuration"""
+    enable: bool = False
+    base_url: str = "http://192.168.191.45:7070"
+    timeout: int = 10
+    update_interval: int = 30
+    min_battery_soc_for_heating: float = 50.0
+    max_battery_soc_for_aggressive: float = 80.0
+    max_temperature_for_heating: float = 70.0
+    heating_thresholds: List[float] = field(default_factory=lambda: [2000.0, 4000.0, 6000.0])
+    min_surplus_duration: int = 120
+    heating_element_power: float = 2000.0
+    turn_on_hysteresis: float = 200.0
+    turn_off_hysteresis: float = 300.0
+    cache_duration: int = 5
+
+@dataclass
 class HeatingConfig:
     system_name: str = "Heating Controller"
     system_version: str = "2.0.0"
@@ -132,6 +149,7 @@ class HeatingConfig:
     simulation_mode: bool = False
     safety: SafetyLimits = field(default_factory=SafetyLimits)
     http_service: HTTPServiceConfig = field(default_factory=HTTPServiceConfig)
+    evcc: EVCCConfig = field(default_factory=EVCCConfig)
 
     @classmethod
     def from_yaml(cls, yaml_path: Union[str, Path]) -> 'HeatingConfig':
@@ -150,7 +168,7 @@ class HeatingConfig:
             http_service.host = http_config.get('host', '0.0.0.0')
             http_service.port = http_config.get('port', 8080)
             http_service.debug = http_config.get('debug', False)
-            http_service.require_auth = http_config.get('require_auth', True)
+            http_service.require_auth = http_config.get('require_auth', False)
             http_service.api_key = http_config.get('api_key', '')
             http_service.rate_limit = http_config.get('rate_limit', '100 per hour')
             http_service.enable_cors = http_config.get('enable_cors', True)
@@ -173,7 +191,10 @@ class HeatingConfig:
         pump_port_config = {}
         if 'hardware' in config_data and 'outputs' in config_data['hardware']:
             for output_name, output_config in config_data['hardware']['outputs'].items():
-                pump_port_config[output_name] = (output_config['board'], output_config['port'])
+                if isinstance(output_config, dict) and 'board' in output_config and 'port' in output_config:
+                    pump_port_config[output_name] = (output_config['board'], output_config['port'])
+                else:
+                    print(f"Warning: Invalid output config for {output_name}: {output_config}")
                 
         # Extract mixer configuration
         mixer_config = MixerConfig()
@@ -199,6 +220,24 @@ class HeatingConfig:
                     max_runtime_minutes=element_config.get('max_runtime_minutes', 60)
                 ))
         
+        # Extract EVCC configuration
+        evcc_config = EVCCConfig()
+        if 'evcc' in config_data:
+            evcc_data = config_data['evcc']
+            evcc_config.enable = evcc_data.get('enable', False)
+            evcc_config.base_url = evcc_data.get('base_url', 'http://192.168.191.45:7070')
+            evcc_config.timeout = evcc_data.get('timeout', 10)
+            evcc_config.update_interval = evcc_data.get('update_interval', 30)
+            evcc_config.min_battery_soc_for_heating = evcc_data.get('min_battery_soc_for_heating', 50.0)
+            evcc_config.max_battery_soc_for_aggressive = evcc_data.get('max_battery_soc_for_aggressive', 80.0)
+            evcc_config.max_temperature_for_heating = evcc_data.get('max_temperature_for_heating', 70.0)
+            evcc_config.heating_thresholds = evcc_data.get('heating_thresholds', [2000.0, 4000.0, 6000.0])
+            evcc_config.min_surplus_duration = evcc_data.get('min_surplus_duration', 120)
+            evcc_config.heating_element_power = evcc_data.get('heating_element_power', 2000.0)
+            evcc_config.turn_on_hysteresis = evcc_data.get('turn_on_hysteresis', 200.0)
+            evcc_config.turn_off_hysteresis = evcc_data.get('turn_off_hysteresis', 300.0)
+            evcc_config.cache_duration = evcc_data.get('cache_duration', 5)
+        
         return cls(
             system_name=safe_get_nested(config_data, ['system', 'name'], 'Heating Controller'),
             system_version=safe_get_nested(config_data, ['system', 'version'], '2.0.0'),
@@ -223,6 +262,9 @@ class HeatingConfig:
             demo_mode=safe_get_nested(config_data, ['development', 'demo_mode'], False),
             mock_hardware=safe_get_nested(config_data, ['development', 'mock_hardware'], False),
             simulation_mode=safe_get_nested(config_data, ['development', 'simulation_mode'], False),
+            mixers=mixer_config,
+            http_service=http_service,
+            evcc=evcc_config,
         )
     
     def validate(self) -> None:

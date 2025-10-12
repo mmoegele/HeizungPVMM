@@ -8,7 +8,7 @@ system:
 
 # Logging Configuration
 logging:
-  level: "INFO"
+  level: "DEBUG"
   log_file: "/var/log/heating/heating_system.log"
   audit_log: "/var/log/heating/audit.log"
 
@@ -27,6 +27,7 @@ buffer_load:
   check_interval: 30              # How often to check temperatures (seconds)
   source_sensor: "puffer_k_mitte" # Source buffer temperature sensor
   target_sensor: "puffer_m_mitte" # Target buffer temperature sensor
+  pump_port: "puffer_lade_pumpe"  # Buffer charging pump
 
 # Safety Limits
 safety:
@@ -102,10 +103,10 @@ http_service:
   enable: true
   host: "0.0.0.0"
   port: 8080
-  debug: false
+  debug: true
   require_auth: false
   api_key: ""  # Will be auto-generated if empty
-  rate_limit: "100 per hour"
+  rate_limit: "5000 per hour"
   enable_cors: true
   dashboard_file: "dashboard.html"
 
@@ -216,5 +217,5 @@ evcc:
 
 # Development Settings
 development:
-  demo_mode: true
-  mock_hardware: true
+  demo_mode: true      # Enable for testing - sensors will use mock data
+  mock_hardware: false  # Use real PiFace hardware for output control

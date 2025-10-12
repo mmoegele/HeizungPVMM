@@ -95,6 +95,7 @@ class LoadBalancer:
 
 
 @dataclass
+@dataclass
 class SolarHeatingConfig:
     """Configuration for EVCC integration"""
     evcc_base_url: str
@@ -111,6 +112,11 @@ class EVCCState:
     battery_soc: float
     battery_configured: bool
     timestamp: datetime
+    
+    @property
+    def house_consumption(self) -> float:
+        """Calculate house consumption (alias for home_power)"""
+        return self.home_power
     
     @property
     def surplus_power(self) -> float:
@@ -213,11 +219,21 @@ def control_heating_elements(evcc_client, hardware, config, logger):
         except Exception:
             pass
 
-    heizstab_ports = [
-        config.hardware['outputs']['heizstab_1'],
-        config.hardware['outputs']['heizstab_2'],
-        config.hardware['outputs']['heizstab_3'],
-    ]
+    # Get heating element ports from pump_port_config
+    heizstab_ports = []
+    if hasattr(config, 'pump_port_config'):
+        for heizstab_id in ['heizstab_1', 'heizstab_2', 'heizstab_3']:
+            if heizstab_id in config.pump_port_config:
+                board, port = config.pump_port_config[heizstab_id]
+                heizstab_ports.append({'board': board, 'port': port, 'description': heizstab_id})
+    
+    if not heizstab_ports:
+        # Fallback to default ports if not configured
+        heizstab_ports = [
+            {'board': 1, 'port': 0, 'description': 'heizstab_1'},
+            {'board': 1, 'port': 1, 'description': 'heizstab_2'},
+            {'board': 1, 'port': 2, 'description': 'heizstab_3'},
+        ]
 
     if battery_soc < 50:
         logger.info(f"Battery SoC {battery_soc:.1f}% < 50%, turning off all heating elements.")
@@ -269,11 +285,22 @@ def control_heating_elements(evcc_client, hardware, config, logger):
                        f"current: {stat['current_runtime']:.1f}min")
 
 def _set_all_heizstaebe(hardware, config, state: bool, logger):
-    heizstab_ports = [
-        config.hardware['outputs']['heizstab_1'],
-        config.hardware['outputs']['heizstab_2'],
-        config.hardware['outputs']['heizstab_3'],
-    ]
+    # Get heating element ports from pump_port_config
+    heizstab_ports = []
+    if hasattr(config, 'pump_port_config'):
+        for heizstab_id in ['heizstab_1', 'heizstab_2', 'heizstab_3']:
+            if heizstab_id in config.pump_port_config:
+                board, port = config.pump_port_config[heizstab_id]
+                heizstab_ports.append({'board': board, 'port': port, 'description': heizstab_id})
+    
+    if not heizstab_ports:
+        # Fallback to default ports if not configured
+        heizstab_ports = [
+            {'board': 1, 'port': 0, 'description': 'heizstab_1'},
+            {'board': 1, 'port': 1, 'description': 'heizstab_2'},
+            {'board': 1, 'port': 2, 'description': 'heizstab_3'},
+        ]
+    
     for i, port in enumerate(heizstab_ports):
         hardware.set_output((port['board'], port['port']), state)
         logger.info(f"Heizstab {i+1} {'ON' if state else 'OFF'} (forced)")

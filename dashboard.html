@@ -218,6 +218,58 @@
             margin-top: 0.5rem;
         }
 
+        .evcc-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .evcc-item {
+            padding: 1rem;
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+            color: white;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .evcc-item.positive {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+        }
+
+        .evcc-item.negative {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        }
+
+        .evcc-item.warning {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+        }
+
+        .evcc-name {
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.9;
+        }
+
+        .evcc-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+        }
+
+        .evcc-unit {
+            font-size: 0.75rem;
+            opacity: 0.8;
+        }
+
+        .evcc-offline {
+            padding: 1rem;
+            background: #6c757d;
+            color: white;
+            border-radius: 8px;
+            text-align: center;
+            grid-column: 1 / -1;
+        }
+
         @media (max-width: 768px) {
             body {
                 padding: 10px;
@@ -270,6 +322,13 @@
         <div class="card">
             <h2>⚙️ System Controllers</h2>
             <div class="controller-status" id="controller-status-grid">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>☀️ EVCC Solar & Battery</h2>
+            <div class="evcc-status" id="evcc-status">
                 <!-- Will be populated by JavaScript -->
             </div>
         </div>
@@ -541,18 +600,100 @@
             }
         }
 
+        // Fetch EVCC status
+        async function fetchEVCCStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/evcc`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    systemState.evcc = await response.json();
+                } else {
+                    systemState.evcc = { enabled: false, connected: false, error: 'HTTP ' + response.status };
+                }
+            } catch (error) {
+                console.error('Error fetching EVCC status:', error);
+                systemState.evcc = { enabled: false, connected: false, error: error.message };
+            }
+        }
+
+        // Update EVCC display
+        function updateEVCCDisplay() {
+            const container = document.getElementById('evcc-status');
+            
+            if (!systemState.evcc) {
+                container.innerHTML = '<div class="evcc-offline">EVCC data not available</div>';
+                return;
+            }
+
+            if (!systemState.evcc.enabled) {
+                container.innerHTML = '<div class="evcc-offline">EVCC integration disabled</div>';
+                return;
+            }
+
+            if (!systemState.evcc.connected) {
+                container.innerHTML = `<div class="evcc-offline">EVCC offline: ${systemState.evcc.message || systemState.evcc.error || 'Connection failed'}</div>`;
+                return;
+            }
+
+            // EVCC is connected, show data
+            const evccData = [
+                {
+                    name: 'PV Production',
+                    value: (systemState.evcc.pv_power / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: systemState.evcc.pv_power > 0 ? 'positive' : ''
+                },
+                {
+                    name: 'Battery SOC',
+                    value: systemState.evcc.battery_soc ? systemState.evcc.battery_soc.toFixed(0) : '--',
+                    unit: '%',
+                    class: systemState.evcc.battery_soc > 80 ? 'positive' : systemState.evcc.battery_soc < 20 ? 'negative' : 'warning'
+                },
+                {
+                    name: 'Grid Power',
+                    value: (systemState.evcc.grid_power / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: systemState.evcc.grid_power < 0 ? 'positive' : 'negative'
+                },
+                {
+                    name: 'Surplus Power',
+                    value: (systemState.evcc.surplus_power / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: systemState.evcc.surplus_power > 0 ? 'positive' : ''
+                },
+                {
+                    name: 'House Load', 
+                    value: (systemState.evcc.house_consumption / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: 'warning'
+                }
+            ];
+
+            container.innerHTML = evccData.map(item => `
+                <div class="evcc-item ${item.class}">
+                    <div class="evcc-name">${item.name}</div>
+                    <div class="evcc-value">${item.value}</div>
+                    <div class="evcc-unit">${item.unit}</div>
+                </div>
+            `).join('');
+        }
+
         // Main update function
         async function updateDashboard() {
             await Promise.all([
                 fetchTemperatures(),
                 fetchIOStates(),
-                fetchSystemHealth()
+                fetchSystemHealth(),
+                fetchEVCCStatus()
             ]);
 
             updateTemperatureDisplay();
             updateOutputDisplay();
             updateInputDisplay();
             updateControllerDisplay();
+            updateEVCCDisplay();
 
             // Update last update time
             document.getElementById('last-update').textContent = 

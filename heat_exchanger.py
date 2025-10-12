@@ -9,7 +9,7 @@ Modern implementation of the original wtcontroller functionality.
 import time
 import logging
 import threading
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from hardware import HeatingHardware
@@ -25,7 +25,7 @@ class HeatExchangerConfig:
     min_interval: float = 0.1       # Minimum interval between pump cycles (seconds)
     interval_multiplier: float = 1.5 # Multiplier for wait time between cycles
     control_interval: int = 10       # Read interval in seconds
-    pump_port: Tuple[int, int] = (1, 7)  # Board, Port for pump
+    pump_port: Union[str, Tuple[int, int]] = "wt_pumpe"  # Port reference or (Board, Port) tuple
     temperature_sensor: str = "bhkw_vorlauf"  # Temperature sensor ID
 
 class HeatExchangerController:
@@ -152,8 +152,7 @@ class HeatExchangerController:
         """Turn pump on"""
         try:
             if not self.is_pump_active:
-                board, port = self.config.pump_port
-                self.hardware.turn_on(board, port)
+                self.hardware.set_output(self.config.pump_port, True)
                 self.is_pump_active = True
                 self.last_state_change = datetime.now()
                 self.logger.debug("Heat exchanger pump turned ON")
@@ -164,8 +163,7 @@ class HeatExchangerController:
         """Turn pump off"""
         try:
             if self.is_pump_active:
-                board, port = self.config.pump_port
-                self.hardware.turn_off(board, port)
+                self.hardware.set_output(self.config.pump_port, False)
                 self.is_pump_active = False
                 self.last_state_change = datetime.now()
                 self.logger.debug("Heat exchanger pump turned OFF")
@@ -244,9 +242,6 @@ class HeatExchangerController:
 
 def create_heat_exchanger_controller(config, hardware, sensor_manager, logger=None) -> HeatExchangerController:
     """Factory function to create a heat exchanger controller"""
-    # Get pump board and port from config, defaulting to (1, 7) if not specified
-    pump_board = getattr(config.heat_exchanger, 'pump_board', 1)
-    pump_port = getattr(config.heat_exchanger, 'pump_port', 7)
     
     heat_exchanger_config = HeatExchangerConfig(
         target_temperature=config.heat_exchanger.target_temperature,
@@ -256,7 +251,7 @@ def create_heat_exchanger_controller(config, hardware, sensor_manager, logger=No
         min_interval=getattr(config.heat_exchanger, 'min_interval', 0.1),
         interval_multiplier=getattr(config.heat_exchanger, 'interval_multiplier', 1.5),
         control_interval=config.heat_exchanger.control_interval,
-        pump_port=(pump_board, pump_port),  # Convert to tuple
+        pump_port=config.heat_exchanger.pump_port,  # Use port reference as-is
         temperature_sensor=config.heat_exchanger.temperature_sensor
     )
     
