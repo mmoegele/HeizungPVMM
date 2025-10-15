@@ -22,6 +22,8 @@ try:
     from mixer_controller import MixerManager
     from heat_exchanger import create_heat_exchanger_controller
     from buffer_load_controller import create_buffer_load_controller
+    from evcc import create_evcc_controller
+    from system_data_reporter import create_system_data_reporter
     print("Logging system loaded from:", logging_system.__file__)
     print("✅ All core modules imported successfully")
 except ImportError as e:
@@ -39,7 +41,8 @@ class HeatingSystemMain:
         self.mixer_manager = None
         self.heat_exchanger = None
         self.buffer_load_controller = None
-        self.heat_exchanger_thread = None
+        self.evcc_controller = None
+        self.system_data_reporter = None
         self.running = False
         self.memory_monitor = None
         
@@ -54,6 +57,123 @@ class HeatingSystemMain:
         # Stop HTTP service if it's running
         if hasattr(self, 'http_service') and self.http_service:
             self.http_service.stop()
+    
+    def _check_and_restart_threads(self):
+        """Monitor and restart critical threads if they die"""
+        try:
+            # Check system data reporter thread
+            if self.system_data_reporter:
+                try:
+                    reporter_status = self.system_data_reporter.get_status()
+                    if not reporter_status['is_running']:
+                        self.logger.warning("🔄 System data reporter stopped, restarting...")
+                        try:
+                            self.system_data_reporter.start()
+                            self.logger.info("✅ System data reporter restarted successfully")
+                        except Exception as e:
+                            self.logger.error(f"❌ Failed to restart system data reporter: {e}")
+                except Exception as e:
+                    self.logger.error(f"❌ Error checking system data reporter: {e}")
+
+            # Check buffer load controller thread
+            if self.buffer_load_controller:
+                if hasattr(self.buffer_load_controller, 'thread') and hasattr(self.buffer_load_controller, 'running'):
+                    if self.buffer_load_controller.running and (
+                        not self.buffer_load_controller.thread or 
+                        not self.buffer_load_controller.thread.is_alive()
+                    ):
+                        self.logger.warning("🔄 Buffer load controller thread died, restarting...")
+                        try:
+                            self.buffer_load_controller.stop()  # Clean stop
+                            time.sleep(1)
+                            self.buffer_load_controller.start()  # Restart
+                            self.logger.info("✅ Buffer load controller thread restarted successfully")
+                        except Exception as e:
+                            self.logger.error(f"❌ Failed to restart buffer load controller: {e}")
+            
+            # Check EVCC controller thread
+            if self.evcc_controller:
+                try:
+                    if hasattr(self.evcc_controller, 'is_thread_healthy'):
+                        if not self.evcc_controller.is_thread_healthy():
+                            thread_status = self.evcc_controller.get_thread_status() if hasattr(self.evcc_controller, 'get_thread_status') else {}
+                            self.logger.warning(f"🔄 EVCC controller thread unhealthy: {thread_status}")
+                            
+                            try:
+                                self.evcc_controller.stop()  # Clean stop
+                                time.sleep(1)
+                                self.evcc_controller.start()  # Restart
+                                self.logger.info("✅ EVCC controller thread restarted successfully")
+                            except Exception as e:
+                                self.logger.error(f"❌ Failed to restart EVCC controller: {e}")
+                except Exception as e:
+                    self.logger.error(f"❌ Error checking EVCC controller thread: {e}")
+
+            # Check heat exchanger thread (enhanced monitoring)
+            if self.heat_exchanger:
+                try:
+                    # Use enhanced thread health checking
+                    if hasattr(self.heat_exchanger, 'is_thread_healthy'):
+                        if not self.heat_exchanger.is_thread_healthy():
+                            thread_status = self.heat_exchanger.get_thread_status() if hasattr(self.heat_exchanger, 'get_thread_status') else {}
+                            self.logger.warning(f"🔄 Heat exchanger thread unhealthy: {thread_status}")
+                            
+                            try:
+                                self.heat_exchanger.stop()  # Clean stop
+                                time.sleep(1)
+                                self.heat_exchanger.start()  # Restart
+                                self.logger.info("✅ Heat exchanger thread restarted successfully")
+                            except Exception as e:
+                                self.logger.error(f"❌ Failed to restart heat exchanger: {e}")
+                    
+                    # Fallback to old method if new methods not available
+                    elif hasattr(self.heat_exchanger, 'thread') and hasattr(self.heat_exchanger, 'running'):
+                        if self.heat_exchanger.running and (
+                            not self.heat_exchanger.thread or 
+                            not self.heat_exchanger.thread.is_alive()
+                        ):
+                            self.logger.warning("🔄 Heat exchanger thread died, restarting...")
+                            try:
+                                self.heat_exchanger.stop()  # Clean stop
+                                time.sleep(1)
+                                self.heat_exchanger.start()  # Restart
+                                self.logger.info("✅ Heat exchanger thread restarted successfully")
+                            except Exception as e:
+                                self.logger.error(f"❌ Failed to restart heat exchanger: {e}")
+                                
+                except Exception as e:
+                    self.logger.error(f"❌ Error checking heat exchanger thread: {e}")
+            
+            # Check mixer controller threads
+            if self.mixer_manager and hasattr(self.mixer_manager, 'check_and_restart_threads'):
+                try:
+                    restart_status = self.mixer_manager.check_and_restart_threads()
+                    # Log summary if any mixers were restarted
+                    restarted_count = sum(restart_status.values())
+                    if restarted_count > 0:
+                        self.logger.info(f"📊 Mixer thread monitoring: {restarted_count} threads restarted")
+                except Exception as e:
+                    self.logger.error(f"❌ Error checking mixer threads: {e}")
+            
+            # Check HTTP service thread
+            if hasattr(self, 'http_service') and self.http_service:
+                try:
+                    if hasattr(self.http_service, 'server_thread') and self.http_service.server_thread:
+                        if not self.http_service.server_thread.is_alive():
+                            self.logger.warning("🔄 HTTP service thread died, restarting...")
+                            try:
+                                self.http_service.stop()  # Clean stop
+                                time.sleep(1) 
+                                self.http_service.start()  # Restart
+                                self.logger.info("✅ HTTP service thread restarted successfully")
+                            except Exception as e:
+                                self.logger.error(f"❌ Failed to restart HTTP service: {e}")
+                except Exception as e:
+                    self.logger.error(f"❌ Error checking HTTP service thread: {e}")
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Error in thread monitoring: {e}")
+            # Don't let thread monitoring crash the main loop
     
     def initialize(self) -> bool:
         try:
@@ -92,32 +212,19 @@ class HeatingSystemMain:
                 str(self.config_file)
             )
             
+            # Determine mock mode - use config setting
+            mock_mode = self.config.mock_hardware
+                        
             self.hardware = create_hardware_controller(
-                self.config.piface_board_count,
-                self.logger,
-                self.config.mock_hardware
+                board_count=self.config.piface_board_count,
+                logger=self.logger,
+                mock_mode=mock_mode
             )
             
-            # Enhanced hardware status display
-            print(f"✅ Hardware controller initialized ({self.config.piface_board_count} boards)")
-            if hasattr(self.hardware, 'run_board_diagnostics'):
-                diag = self.hardware.run_board_diagnostics()
-                print(f"   🔧 GPIO patch: {'✅' if diag['gpio_patch_applied'] else '❌'}")
-                print(f"   🎭 Mock mode: {'✅' if diag['mock_mode'] else '❌'}")
-                
-                # Show board status
-                board_status = []
-                for board_id, status in diag['boards'].items():
-                    if status['available']:
-                        board_status.append(f"B{board_id}:✅")
-                    else:
-                        board_status.append(f"B{board_id}:❌")
-                print(f"   📡 Boards: {' '.join(board_status)}")
-            else:
-                print(f"   ⚠️  No diagnostics available for {type(self.hardware).__name__}")
+            # Turn off all outputs at startup for safety
+            self.hardware.turn_off_all_outputs()
             
             self.sensor_manager = create_sensor_manager(self.config, self.logger_system)
-            print("✅ Sensor manager initialized")
             
             # Initialize mixer controller
             self.mixer_manager = MixerManager(
@@ -127,53 +234,20 @@ class HeatingSystemMain:
             )
             print("✅ Mixer manager initialized")
             
-            # Initialize heat exchanger controller
+            # Initialize heat exchanger controller (now self-threaded)
             self.heat_exchanger = create_heat_exchanger_controller(
                 config=self.config,
                 hardware=self.hardware,
                 sensor_manager=self.sensor_manager,
                 logger=self.logger
             )
-            
-            # Start heat exchanger in its own thread with proper interval
-            def heat_exchanger_loop():
-                while self.running:
-                    if self.heat_exchanger:
-                        updated = self.heat_exchanger.update()
-                        if not updated:
-                            # Sleep a short time if no update was needed
-                            time.sleep(0.1)
-                    else:
-                        time.sleep(1)
-                        
-            self.heat_exchanger_thread = threading.Thread(
-                target=heat_exchanger_loop,
-                name="HeatExchangerThread",
-                daemon=True
-            )
-            self.heat_exchanger_thread.start()
             print("✅ Heat exchanger controller initialized and thread started")
             
-            # Start mixer manager in its own thread with proper interval
-            def mixer_loop():
-                while self.running:
-                    if self.mixer_manager:
-                        updated = self.mixer_manager.update()
-                        if not updated:
-                            # Sleep a short time if no update was needed
-                            time.sleep(0.1)
-                    else:
-                        time.sleep(1)
-                        
-            self.mixer_thread = threading.Thread(
-                target=mixer_loop,
-                name="MixerThread",
-                daemon=True
-            )
-            self.mixer_thread.start()
-            print("✅ Mixer manager thread started")
+            # Start mixer controllers
+            self.mixer_manager.start_all()
+            print("✅ Mixer controllers started")
             
-            # Initialize buffer load controller
+            # Initialize and start buffer load controller
             self.buffer_load_controller = create_buffer_load_controller(
                 config=self.config,
                 hardware=self.hardware,
@@ -181,24 +255,59 @@ class HeatingSystemMain:
                 logger=self.logger
             )
             
-            # Start buffer load controller in its own thread with proper interval
-            def buffer_load_loop():
-                while self.running:
-                    if self.buffer_load_controller:
-                        updated = self.buffer_load_controller.update()
-                        if not updated:
-                            # Sleep a short time if no update was needed
-                            time.sleep(0.1)
-                    else:
-                        time.sleep(1)
+            # Start buffer load controller (it manages its own thread)
+            self.buffer_load_controller.start()
+            print("✅ Buffer load controller initialized and started")
+            
+            # Start heat exchanger controller (it manages its own thread)  
+            self.heat_exchanger.start()
+            print("✅ Heat exchanger controller initialized and started")
+            
+            # Initialize and start system data reporter
+            try:
+                self.logger.info(f"System data reporter configuration check: enabled={self.config.system_data_reporter.enable}")
+                if self.config.system_data_reporter.enable:
+                    self.logger.info(f"Creating system data reporter for API: {self.config.system_data_reporter.api_url}")
+                    self.system_data_reporter = create_system_data_reporter(
+                        config=self.config,
+                        sensor_manager=self.sensor_manager,
+                        hardware_controller=self.hardware,
+                        api_url=self.config.system_data_reporter.api_url,
+                        report_interval=self.config.system_data_reporter.report_interval
+                    )
+                    self.logger.info("System data reporter object created successfully")
+                    
+                    # Test API connection before starting (non-blocking)
+                    self.logger.info(f"Testing API connection to {self.config.system_data_reporter.api_url}")
+                    try:
+                        api_connection_ok = self.system_data_reporter.test_api_connection()
+                        self.logger.info(f"API connection test completed: {api_connection_ok}")
                         
-            self.buffer_load_thread = threading.Thread(
-                target=buffer_load_loop,
-                name="BufferLoadThread",
-                daemon=True
-            )
-            self.buffer_load_thread.start()
-            print("✅ Buffer load controller initialized and thread started")
+                        if api_connection_ok:
+                            self.system_data_reporter.start()
+                            print(f"✅ System data reporter initialized and started (reporting to {self.config.system_data_reporter.api_url})")
+                            self.logger.info(f"System data reporter successfully started")
+                        else:
+                            # Start anyway - it will retry connections during operation
+                            self.system_data_reporter.start()
+                            print(f"⚠️ System data reporter started despite API connection issues - will retry during operation")
+                            self.logger.info(f"System data reporter started despite API connection issues - will retry during operation")
+                    except Exception as api_test_error:
+                        # Start anyway - don't let API issues block system startup
+                        self.logger.warning(f"Exception during API connection test: {api_test_error}")
+                        self.system_data_reporter.start()
+                        print(f"⚠️ System data reporter started despite API test error - will retry during operation")
+                        self.logger.info(f"System data reporter started despite API test error: {api_test_error}")
+                        
+                else:
+                    print("ℹ️ System data reporter disabled in configuration")
+                    self.logger.info("System data reporter disabled in configuration")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize system data reporter: {e}")
+                self.logger.exception("Full system data reporter initialization error:")
+                print(f"❌ System data reporter initialization failed: {e}")
+                # Continue with startup even if reporter fails
+                self.system_data_reporter = None
             
             temperatures = self.sensor_manager.get_valid_temperatures()
             print(f"✅ Initial sensor check: {len(temperatures)} sensors responding")
@@ -208,7 +317,18 @@ class HeatingSystemMain:
             self.memory_monitor.start_monitoring()
             print("✅ Memory monitor initialized")
             
+            # Initialize EVCC controller if enabled
+            print("🔄 Initializing EVCC controller...")
+            self.evcc_controller = create_evcc_controller(self.config, self.hardware, self.logger)
+            if self.evcc_controller:
+                print("🔄 Starting EVCC controller thread...")
+                self.evcc_controller.start()
+                print(f"✅ EVCC controller initialized and started for {self.config.evcc.base_url}")
+            else:
+                print("ℹ️ EVCC integration disabled or failed to initialize")
+            
             # Initialize HTTP service if enabled
+            print("🔄 Initializing HTTP service...")
             if self.config.http_service.enable:
                 try:
                     http_config = HTTPServiceConfig(
@@ -232,6 +352,8 @@ class HeatingSystemMain:
                     self.logger.error(f"Failed to initialize HTTP service: {e}")
                     print(f"⚠️ HTTP service initialization failed: {e}")
                     # Continue anyway as this is not critical
+            else:
+                print("ℹ️ HTTP service disabled in configuration")
             
             return True
             
@@ -272,8 +394,17 @@ class HeatingSystemMain:
                                 f"-> {state['target_temperature']:.1f}°C"
                             )
                 
+                # Get main loop interval (default to 5 seconds if not configured)
+                main_loop_interval = getattr(self.config, 'main_loop_interval', None)
+                if main_loop_interval is None:
+                    main_loop_interval = getattr(self.config, 'system_control', {}).get('main_loop_interval', 5)
+                
+                # Check and restart threads every 10 loops (every ~50 seconds)
+                if loop_count % 10 == 0:
+                    self._check_and_restart_threads()
+                
                 loop_count += 1
-                time.sleep(self.config.main_loop_interval)
+                time.sleep(main_loop_interval)
                 
         except KeyboardInterrupt:
             print("\n🛑 Shutdown requested by user")
@@ -301,29 +432,35 @@ class HeatingSystemMain:
             if self.memory_monitor:
                 self.memory_monitor.stop_monitoring()
                 print("✅ Memory monitor stopped")
+            
+            # Clean up system data reporter
+            if self.system_data_reporter:
+                self.system_data_reporter.stop()
+                print("✅ System data reporter stopped")
                 
-            # Clean up heat exchanger
+            # Clean up EVCC controller
+            if self.evcc_controller:
+                self.evcc_controller.stop()
+                print("✅ EVCC controller stopped")
+                
+            # Clean up heat exchanger (now self-managed)
             if self.heat_exchanger:
-                self.heat_exchanger.dispose()
-                if hasattr(self, 'heat_exchanger_thread') and self.heat_exchanger_thread and self.heat_exchanger_thread.is_alive():
-                    self.heat_exchanger_thread.join(timeout=2)
-                print("✅ Heat exchanger controller disposed")
+                self.heat_exchanger.stop()
+                print("✅ Heat exchanger controller stopped")
             
             # Clean up mixer manager
             if self.mixer_manager:
-                self.mixer_manager.dispose()
-                if hasattr(self, 'mixer_thread') and self.mixer_thread and self.mixer_thread.is_alive():  
-                    self.mixer_thread.join(timeout=2)
-                print("✅ Mixer manager disposed")
+                self.mixer_manager.stop_all()
+                print("✅ Mixer controllers stopped")
                 
             # Clean up buffer load controller
             if self.buffer_load_controller:
-                self.buffer_load_controller.dispose()
-                if hasattr(self, 'buffer_load_thread') and self.buffer_load_thread and self.buffer_load_thread.is_alive():
-                    self.buffer_load_thread.join(timeout=2)
-                print("✅ Buffer load controller disposed")
+                self.buffer_load_controller.stop()
+                print("✅ Buffer load controller stopped")
                 
             if self.hardware:
+                # Turn off all outputs before disposing
+                self.hardware.turn_off_all_outputs()
                 self.hardware.dispose()
                 print("✅ Hardware disposed")
             

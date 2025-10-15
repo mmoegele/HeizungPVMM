@@ -6,13 +6,12 @@ __all__ = ['HeatingHardware', 'create_hardware_controller']
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any
-from gpio import apply_gpio_patch
 
-_gpio_patch_applied = apply_gpio_patch()
+
 
 class HeatingHardware(ABC):
     def __init__(self):
-        # Default hardware configuration mapping
+        # Default hardware configuration mapping for outputs
         self.port_mapping = {
             'puffer_lade_pumpe': (0, 6),
             'mischer_1_auf': (0, 1),
@@ -24,6 +23,11 @@ class HeatingHardware(ABC):
             'heizstab_1': (1, 0),
             'heizstab_2': (1, 1),
             'heizstab_3': (1, 2)
+        }
+        
+        # Default hardware configuration mapping for inputs
+        self.input_mapping = {
+            'bhkw_running_status': (0, 0)
         }
     
     def set_output(self, port_ref, state: bool) -> bool:
@@ -43,8 +47,22 @@ class HeatingHardware(ABC):
         else:
             return self.turn_off(board, port)
     
-    def get_output(self, board: int, port: int) -> bool:
-        """Get current output state - override in subclasses"""
+    def get_input_by_name(self, input_ref) -> bool:
+        """Get input state using either (board, port) tuple or string reference"""
+        if isinstance(input_ref, str):
+            if input_ref in self.input_mapping:
+                board, port = self.input_mapping[input_ref]
+            else:
+                raise ValueError(f"Unknown input reference: {input_ref}")
+        elif isinstance(input_ref, tuple) and len(input_ref) == 2:
+            board, port = input_ref
+        else:
+            raise ValueError(f"Invalid input reference: {input_ref}")
+        
+        return self.get_input(board, port)
+    
+    def get_input(self, board: int, port: int) -> bool:
+        """Get current input state - override in subclasses"""
         return False
     
     def get_input(self, board: int, port: int) -> bool:
@@ -70,6 +88,17 @@ class HeatingHardware(ABC):
     @abstractmethod
     def dispose(self) -> None:
         pass
+    
+    def turn_off_all_outputs(self) -> None:
+        """Turn off all outputs on all boards"""
+        # Get all configured outputs from port_mapping
+        for port_name, (board, port) in self.port_mapping.items():
+            try:
+                self.turn_off(board, port)
+            except Exception as e:
+                # Continue with other ports even if one fails
+                print(f"Warning: Failed to turn off {port_name} (board {board}, port {port}): {e}")
+        print("🔄 All outputs turned OFF")
 
 class MockHardwareController(HeatingHardware):
     def __init__(self, board_count: int, logger: logging.Logger):
@@ -127,7 +156,6 @@ class PiFaceController(HeatingHardware):
         self.logger = logger
         self.board_count = board_count
         self.mock_mode = mock_mode
-        self.gpio_patch_applied = _gpio_patch_applied
         
         if mock_mode:
             self.mock_controller = MockHardwareController(board_count, logger)
@@ -140,34 +168,74 @@ class PiFaceController(HeatingHardware):
                 self.logger.info("Running in demo/mock mode - using simulated hardware")
                 return
             
-            if self.gpio_patch_applied:
-                self.logger.info("🔧 GPIO patch applied - PiFace should initialize cleanly")
+            self.logger.info("🔄 Starting PiFace board initialization...")
+            import pifacedigitalio as pfdio
+            import pifacecommon.interrupts
             
-            import pifacedigitalio
+            # Override the enable_interrupts method - EXACT copy from working test
+            # Replace problematic interrupt functions with safe no-ops
+            def dummy_gpio_interrupts_enable():
+                pass
+                
+            def dummy_gpio_interrupts_disable():
+                pass
+                
+            def dummy_bring_gpio_interrupt_into_userspace():
+                pass
+            
+            # Apply the monkey patches
+            pifacecommon.interrupts.gpio_interrupts_enable = dummy_gpio_interrupts_enable
+            pifacecommon.interrupts.gpio_interrupts_disable = dummy_gpio_interrupts_disable
+            pifacecommon.interrupts.bring_gpio_interrupt_into_userspace = dummy_bring_gpio_interrupt_into_userspace
+            
+            self.logger.info("✅ GPIO interrupt monkey patch applied successfully")
+            
             self.boards = []
             
             for i in range(self.board_count):
                 try:
-                    board = pifacedigitalio.PiFaceDigital(i)
+                    self.logger.info(f"🔄 Initializing PiFace board {i} with interrupt patch...")
+                    
+                    # Now initialize normally - interrupts will be skipped - EXACT copy from working test
+                    board = pfdio.PiFaceDigital(hardware_addr=i)
+                    
                     self.boards.append(board)
-                    self.logger.info(f"✅ PiFace board {i} initialized")
+                    self.logger.info(f"✅ PiFace board {i} initialized with interrupt patch")
+                        
                 except Exception as e:
-                    self.logger.error(f"Failed to initialize board {i}: {e}")
+                    # Log specific error details for diagnosis
+                    self.logger.error(f"❌ PiFace board {i} initialization error: {e}")
                     self.boards.append(None)
             
+            # Check if any boards were successfully initialized
+            working_boards = [b for b in self.boards if b is not None]
+            total_boards = len(self.boards)
+            
+            if working_boards:
+                self.logger.info(f"✅ PiFace initialization completed - {len(working_boards)}/{total_boards} boards active")
+            else:
+                self.logger.error(f"❌ No PiFace boards initialized successfully ({total_boards} attempted)")
+                self.logger.error("   System will continue but hardware control will be unavailable")
+                self.logger.error("   Check SPI configuration and hardware connections")
+            
         except ImportError:
-            self.logger.warning("PiFace library not available, using mock mode")
-            self.mock_mode = True
-            self.mock_controller = MockHardwareController(self.board_count, self.logger)
+            self.logger.error("❌ PiFace library not available")
+            self.logger.error("   Install with: sudo apt-get install python3-pifacedigitalio")
+            # Initialize empty boards list so system can continue
+            self.boards = [None] * self.board_count
     
     def turn_on(self, board: int, port: int) -> bool:
         if self.mock_mode:
             return self.mock_controller.turn_on(board, port)
         
         try:
-            if self.boards[board]:
+            if board < len(self.boards) and self.boards[board] is not None:
                 self.boards[board].output_pins[port].turn_on()
+                self.logger.debug(f"Board {board}, port {port} turned ON")
                 return True
+            else:
+                self.logger.warning(f"Board {board} not available - cannot turn on port {port}")
+                return False
         except Exception as e:
             self.logger.error(f"Failed to turn on board {board}, port {port}: {e}")
         return False
@@ -177,9 +245,13 @@ class PiFaceController(HeatingHardware):
             return self.mock_controller.turn_off(board, port)
         
         try:
-            if self.boards[board]:
+            if board < len(self.boards) and self.boards[board] is not None:
                 self.boards[board].output_pins[port].turn_off()
+                self.logger.debug(f"Board {board}, port {port} turned OFF")
                 return True
+            else:
+                self.logger.warning(f"Board {board} not available - cannot turn off port {port}")
+                return False
         except Exception as e:
             self.logger.error(f"Failed to turn off board {board}, port {port}: {e}")
         return False
@@ -189,8 +261,11 @@ class PiFaceController(HeatingHardware):
             return self.mock_controller.read_input(board, port)
         
         try:
-            if self.boards[board]:
+            if board < len(self.boards) and self.boards[board] is not None:
                 return bool(self.boards[board].input_pins[port].value)
+            else:
+                self.logger.warning(f"Board {board} not available - cannot read input {port}")
+                return False
         except Exception as e:
             self.logger.error(f"Failed to read input board {board}, port {port}: {e}")
         return False
@@ -200,8 +275,11 @@ class PiFaceController(HeatingHardware):
             return self.mock_controller.get_output(board, port)
         
         try:
-            if self.boards[board]:
+            if board < len(self.boards) and self.boards[board] is not None:
                 return bool(self.boards[board].output_pins[port].value)
+            else:
+                self.logger.warning(f"Board {board} not available - cannot get output state {port}")
+                return False
         except Exception as e:
             self.logger.error(f"Failed to get output state board {board}, port {port}: {e}")
         return False
@@ -220,7 +298,6 @@ class PiFaceController(HeatingHardware):
     
     def run_board_diagnostics(self) -> Dict[str, Any]:
         return {
-            "gpio_patch_applied": self.gpio_patch_applied,
             "mock_mode": self.mock_mode,
             "board_count": self.board_count,
             "boards": self.get_board_status()

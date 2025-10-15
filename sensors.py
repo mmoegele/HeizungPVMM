@@ -34,12 +34,6 @@ class TemperatureSensor:
             if not content:
                 return False, "Empty sensor reading"
             
-            if "YES" not in content:
-                return False, "Invalid CRC"
-            
-            if "t=" not in content:
-                return False, "No temperature value found"
-            
             return True, content
             
         except Exception as e:
@@ -48,11 +42,31 @@ class TemperatureSensor:
     def parse_temperature(self, raw_content: str) -> Optional[float]:
         """Parse temperature value from raw sensor data"""
         try:
-            temp_pos = raw_content.find("t=")
-            if temp_pos != -1:
-                temp_string = raw_content[temp_pos + 2:]
-                temp_value = float(temp_string) / 1000.0
-                return temp_value
+            # Check if this is OWFS format (simple float value)
+            if "/mnt/1wire" in str(self.path):
+                # OWFS format: direct temperature value in Celsius
+                return float(raw_content)
+            
+            # Check if this is GPIO W1 format (with YES/NO and t= pattern)
+            elif "YES" in raw_content and "t=" in raw_content:
+                # GPIO W1 format: needs parsing and conversion
+                temp_pos = raw_content.find("t=")
+                if temp_pos != -1:
+                    temp_string = raw_content[temp_pos + 2:]
+                    temp_value = float(temp_string) / 1000.0
+                    return temp_value
+                    
+            # Try direct float parsing as fallback
+            else:
+                try:
+                    return float(raw_content)
+                except ValueError:
+                    # Check for invalid GPIO W1 reading
+                    if "NO" in raw_content:
+                        return None  # Invalid CRC
+                    # Unknown format
+                    return None
+                    
             return None
         except (ValueError, IndexError) as e:
             return None
@@ -60,13 +74,14 @@ class TemperatureSensor:
     def read_temperature(self) -> TemperatureReading:
         """Read temperature with retry logic"""
         now = datetime.now()
+        last_error = None
         
         for attempt in range(self.retry_attempts):
             success, raw_value = self.read_raw_value()
             
             if success:
                 temp = self.parse_temperature(raw_value)
-                if temp is not None:
+                if temp is not None and self._is_valid_temperature(temp):
                     reading = TemperatureReading(
                         value=temp,
                         timestamp=now,
@@ -76,12 +91,16 @@ class TemperatureSensor:
                     self._last_reading = reading
                     self._last_error = None
                     return reading
+                else:
+                    last_error = f"Invalid temperature value: {temp}"
+            else:
+                last_error = raw_value  # raw_value contains error message when success=False
             
             if attempt < self.retry_attempts - 1:
                 time.sleep(self.retry_delay)
         
         # Return invalid reading after all retries failed
-        error_msg = f"Failed to read sensor after {self.retry_attempts} attempts"
+        error_msg = last_error or f"Failed to read sensor after {self.retry_attempts} attempts"
         self._last_error = error_msg
         return TemperatureReading(
             value=0.0,
@@ -90,6 +109,10 @@ class TemperatureSensor:
             is_valid=False,
             error_message=error_msg
         )
+    
+    def _is_valid_temperature(self, temp: float) -> bool:
+        """Validate temperature reading is within reasonable bounds"""
+        return -55.0 <= temp <= 125.0  # DS18B20 operating range
     
     @property
     def last_reading(self) -> Optional[TemperatureReading]:
@@ -246,15 +269,68 @@ class SensorManager:
             "sensor_count": len(self.sensors),
             "valid_sensors": valid_count,
             "all_valid": valid_count == len(self.sensors),
-            "errors": {}
+            "errors": {},
+            "owfs_status": self._check_owfs_status(),
+            "sensor_paths": {}
         }
         
-        # Collect error messages
-        for sensor_id, reading in readings.items():
-            if not reading.is_valid and reading.error_message:
+        # Collect error messages and path information
+        for sensor_id, sensor in self.sensors.items():
+            # Check path existence
+            path_exists = Path(sensor.path).exists()
+            diagnostics["sensor_paths"][sensor_id] = {
+                "path": str(sensor.path),
+                "exists": path_exists,
+                "is_owfs": "/mnt/1wire" in str(sensor.path)
+            }
+            
+            # Get reading info
+            reading = readings.get(sensor_id)
+            if reading and not reading.is_valid and reading.error_message:
                 diagnostics["errors"][sensor_id] = reading.error_message
         
         return diagnostics
+    
+    def _check_owfs_status(self) -> Dict:
+        """Check OWFS mount status and basic functionality"""
+        owfs_status = {
+            "mount_point_exists": False,
+            "is_mounted": False,
+            "sensors_detected": 0,
+            "mount_info": None
+        }
+        
+        try:
+            # Check if mount point exists
+            owfs_path = Path("/mnt/1wire")
+            owfs_status["mount_point_exists"] = owfs_path.exists()
+            
+            if owfs_path.exists():
+                # Check if it's mounted by looking for typical OWFS contents
+                try:
+                    contents = list(owfs_path.iterdir())
+                    # Look for temperature sensor directories (28.xxxx format)
+                    sensors = [d for d in contents if d.is_dir() and d.name.startswith("28.")]
+                    owfs_status["sensors_detected"] = len(sensors)
+                    owfs_status["is_mounted"] = len(contents) > 0
+                except Exception as e:
+                    self.logger.debug(f"Error checking OWFS contents: {e}")
+                    
+                # Get mount information
+                try:
+                    import subprocess
+                    result = subprocess.run(["mount"], capture_output=True, text=True)
+                    for line in result.stdout.split('\n'):
+                        if '/mnt/1wire' in line:
+                            owfs_status["mount_info"] = line.strip()
+                            break
+                except Exception as e:
+                    self.logger.debug(f"Error getting mount info: {e}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error checking OWFS status: {e}")
+            
+        return owfs_status
     
     def set_mock_temperature(self, sensor_id: str, temperature: float) -> None:
         """Set mock temperature (only in mock mode)"""

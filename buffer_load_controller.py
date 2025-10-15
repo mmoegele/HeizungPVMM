@@ -1,244 +1,207 @@
 #!/usr/bin/env python3
 """
-Buffer Loading Controller Module
+Simple Buffer Loading Controller Module
 
-Controls the buffer loading pump based on temperature differences between buffers.
-Activates when Konrad's buffer is warmer than Michael's buffer to transfer heat.
+Very simple buffer loading pump control:
+1. Check if Konrad buffer temp > Michael buffer temp  
+2. If yes: Turn pump ON
+3. If no: Turn pump OFF
+4. Wait 1 minute
+5. Repeat
 """
 
 import logging
 import threading
 import time
-from typing import Optional, Dict, Union, Tuple
-from datetime import datetime, timedelta
+from typing import Optional, Dict
+from datetime import datetime
 from dataclasses import dataclass
 from hardware import HeatingHardware
 from sensors import SensorManager
 
 @dataclass
-class BufferLoadConfig:
-    """Buffer loading pump configuration"""
-    min_temperature_difference: float = 2.0  # Minimum temperature difference to start transfer
-    hysteresis: float = 1.0                 # Hysteresis to prevent rapid cycling
-    min_run_time: int = 60                  # Minimum pump run time in seconds
-    min_off_time: int = 120                 # Minimum time pump stays off
-    check_interval: int = 30                # How often to check temperatures
-    source_sensor: str = "puffer_k_mitte"   # Source buffer sensor (Konrad)
-    target_sensor: str = "puffer_m_mitte"   # Target buffer sensor (Michael)
-    pump_port: Union[str, Tuple[int, int]] = "puffer_lade_pumpe"  # Port reference or (Board, Port) tuple
+class BufferState:
+    """Simple buffer state"""
+    konrad_temp: float = 0.0
+    michael_temp: float = 0.0
+    pump_active: bool = False
+    last_action: str = "none"
+    last_check_time: datetime = None
+    error_message: Optional[str] = None
 
 class BufferLoadController:
-    """Controls buffer loading pump based on temperature differences"""
+    """Very simple buffer loading pump controller"""
     
-    def __init__(self, config: BufferLoadConfig, hardware: HeatingHardware, 
-                 sensor_manager: SensorManager, logger: Optional[logging.Logger] = None):
-        self.config = config
+    def __init__(self, config: Dict, hardware: HeatingHardware, 
+                 sensor_manager: SensorManager, logger: logging.Logger):
         self.hardware = hardware
         self.sensor_manager = sensor_manager
-        self.logger = logger or logging.getLogger("buffer_load")
+        self.logger = logger
         
-        self.is_pump_active = False
-        self.last_state_change = datetime.now()
-        self.last_check = datetime.now()
-        self.error_state: Optional[str] = None
-        self.last_temps: Dict[str, float] = {}
-    
-    def check_temperatures(self) -> tuple[Optional[float], Optional[float]]:
-        """Read current temperatures from both buffers"""
-        try:
-            temps = self.sensor_manager.get_valid_temperatures()
-            source_temp = temps.get(self.config.source_sensor)
-            target_temp = temps.get(self.config.target_sensor)
-            
-            if source_temp is not None and target_temp is not None:
-                self.last_temps = {
-                    self.config.source_sensor: source_temp,
-                    self.config.target_sensor: target_temp
-                }
-                self.error_state = None
-                return source_temp, target_temp
-            else:
-                missing = []
-                if source_temp is None:
-                    missing.append(self.config.source_sensor)
-                if target_temp is None:
-                    missing.append(self.config.target_sensor)
-                self.error_state = f"Missing temperature readings: {', '.join(missing)}"
-                self.logger.warning(self.error_state)
-                return None, None
-                
-        except Exception as e:
-            self.error_state = f"Error reading temperatures: {e}"
-            self.logger.error(self.error_state)
-            return None, None
-    
-    def should_start_pump(self, source_temp: float, target_temp: float) -> bool:
-        """Determine if pump should be started"""
-        # Check temperature difference
-        temp_diff = source_temp - target_temp
+        # Configuration
+        self.konrad_sensor = config.get('source_sensor', 'puffer_k_mitte')
+        self.michael_sensor = config.get('target_sensor', 'puffer_m_mitte') 
+        self.pump_port = config.get('pump_port', 'puffer_lade_pumpe')
+        self.min_temp_difference = config.get('min_temperature_difference', 5.0)  # Minimum temperature difference to start pump
+        self.check_interval = 60.0  # 1 minute between checks
         
-        if not self.is_pump_active:
-            # When pump is off, need larger difference to start
-            if temp_diff >= self.config.min_temperature_difference:
-                # Check minimum off time
-                time_off = (datetime.now() - self.last_state_change).total_seconds()
-                return time_off >= self.config.min_off_time
-        else:
-            # When pump is running, use hysteresis for stop decision
-            return temp_diff >= (self.config.min_temperature_difference - self.config.hysteresis)
+        # State
+        self.state = BufferState(last_check_time=datetime.now())
         
-        return False
-    
-    def should_stop_pump(self, source_temp: float, target_temp: float) -> bool:
-        """Determine if pump should be stopped"""
-        if not self.is_pump_active:
-            return True
-            
-        # Check if minimum run time has elapsed
-        run_time = (datetime.now() - self.last_state_change).total_seconds()
-        if run_time < self.config.min_run_time:
-            return False
-            
-        # Check temperature difference including hysteresis
-        temp_diff = source_temp - target_temp
-        return temp_diff < (self.config.min_temperature_difference - self.config.hysteresis)
-    
-    def start_pump(self) -> None:
-        """Start the buffer loading pump"""
-        try:
-            if not self.is_pump_active:
-                self.hardware.set_output(self.config.pump_port, True)
-                self.is_pump_active = True
-                self.last_state_change = datetime.now()
-                self.logger.info(
-                    "Buffer loading pump started. Temps: %s=%.1f°C, %s=%.1f°C", 
-                    self.config.source_sensor, self.last_temps.get(self.config.source_sensor, 0),
-                    self.config.target_sensor, self.last_temps.get(self.config.target_sensor, 0)
-                )
-        except Exception as e:
-            self.error_state = f"Failed to start pump: {e}"
-            self.logger.error(self.error_state)
-    
-    def stop_pump(self) -> None:
-        """Stop the buffer loading pump"""
-        try:
-            if self.is_pump_active:
-                self.hardware.set_output(self.config.pump_port, False)
-                self.is_pump_active = False
-                self.last_state_change = datetime.now()
-                self.logger.info(
-                    "Buffer loading pump stopped. Temps: %s=%.1f°C, %s=%.1f°C",
-                    self.config.source_sensor, self.last_temps.get(self.config.source_sensor, 0),
-                    self.config.target_sensor, self.last_temps.get(self.config.target_sensor, 0)
-                )
-        except Exception as e:
-            self.error_state = f"Failed to stop pump: {e}"
-            self.logger.error(self.error_state)
-    
-    def update(self) -> None:
-        """Main update function - should be called regularly"""
-        now = datetime.now()
+        # Running flag
+        self.running = False
+        self.thread = None
         
-        # Only check at configured interval
-        if (now - self.last_check).total_seconds() < self.config.check_interval:
+        self.logger.info(f"Simple buffer load controller initialized")
+        self.logger.info(f"  Konrad sensor: {self.konrad_sensor}")
+        self.logger.info(f"  Michael sensor: {self.michael_sensor}")
+        self.logger.info(f"  Pump port: {self.pump_port}")
+        self.logger.info(f"  Min temp difference: {self.min_temp_difference}°C")
+        self.logger.info(f"  Check interval: {self.check_interval}s")
+    
+    def start(self):
+        """Start the buffer load control loop"""
+        if self.running:
             return
         
-        self.last_check = now
+        self.running = True
+        self.thread = threading.Thread(target=self._control_loop, daemon=True)
+        self.thread.start()
+        self.logger.info("Started buffer load controller")
+    
+    def stop(self):
+        """Stop the buffer load control loop"""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=10)
+        # Turn off pump when stopping
+        try:
+            self.hardware.set_output(self.pump_port, False)
+            self.state.pump_active = False
+            self.logger.info("Stopped buffer load controller and turned off pump")
+        except Exception as e:
+            self.logger.error(f"Error stopping pump: {e}")
+    
+    def _control_loop(self):
+        """Main control loop - runs continuously"""
+        self.logger.info("Buffer load controller: Starting control loop")
         
+        while self.running:
+            try:
+                # Check temperatures and control pump
+                self._check_and_control()
+                
+                # Wait for next cycle
+                time.sleep(self.check_interval)
+                
+            except Exception as e:
+                self.logger.error(f"Buffer load controller error: {e}")
+                # Safety: turn off pump on error
+                try:
+                    self.hardware.set_output(self.pump_port, False)
+                    self.state.pump_active = False
+                    self.state.error_message = str(e)
+                except:
+                    pass
+                time.sleep(self.check_interval)
+    
+    def _check_and_control(self):
+        """Check temperatures and control pump"""
         try:
             # Get current temperatures
-            source_temp, target_temp = self.check_temperatures()
-            if source_temp is None or target_temp is None:
-                self.stop_pump()  # Safety: stop pump if no valid readings
+            temps = self.sensor_manager.get_valid_temperatures()
+            
+            konrad_temp = temps.get(self.konrad_sensor)
+            michael_temp = temps.get(self.michael_sensor)
+            
+            if konrad_temp is None or michael_temp is None:
+                # No valid temperatures - turn off pump for safety
+                if self.state.pump_active:
+                    self.hardware.set_output(self.pump_port, False)
+                    self.state.pump_active = False
+                    self.state.last_action = "stop"
+                    self.logger.warning("Missing temperature readings - pump stopped")
+                
+                missing = []
+                if konrad_temp is None:
+                    missing.append(self.konrad_sensor)
+                if michael_temp is None:
+                    missing.append(self.michael_sensor)
+                self.state.error_message = f"Missing sensors: {', '.join(missing)}"
                 return
             
-            # Determine if pump state should change
-            if self.is_pump_active:
-                if self.should_stop_pump(source_temp, target_temp):
-                    self.stop_pump()
-            else:
-                if self.should_start_pump(source_temp, target_temp):
-                    self.start_pump()
-                    
+            # Update state
+            self.state.konrad_temp = konrad_temp
+            self.state.michael_temp = michael_temp
+            self.state.last_check_time = datetime.now()
+            self.state.error_message = None
+            
+            # Simple logic: If (Konrad - Michael) > min_temp_difference, turn pump ON, else turn pump OFF
+            temp_difference = konrad_temp - michael_temp
+            should_pump_run = temp_difference > self.min_temp_difference
+            
+            if should_pump_run and not self.state.pump_active:
+                # Turn pump ON
+                self.hardware.set_output(self.pump_port, True)
+                self.state.pump_active = True
+                self.state.last_action = "start"
+                self.logger.info(f"Buffer pump ON: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C > {self.min_temp_difference}°C")
+                
+            elif not should_pump_run and self.state.pump_active:
+                # Turn pump OFF
+                self.hardware.set_output(self.pump_port, False)
+                self.state.pump_active = False
+                self.state.last_action = "stop"
+                self.logger.info(f"Buffer pump OFF: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C <= {self.min_temp_difference}°C")
+            
+            # Log status every check (even if no change)
+            status = "ON" if self.state.pump_active else "OFF"
+            self.logger.debug(f"Buffer pump {status}: Konrad={konrad_temp:.1f}°C, Michael={michael_temp:.1f}°C, Diff={temp_difference:.1f}°C")
+                
         except Exception as e:
-            self.error_state = f"Error in buffer load controller update: {e}"
-            self.logger.error(self.error_state)
-            self.stop_pump()  # Safety: stop pump on error
+            self.logger.error(f"Error in temperature check: {e}")
+            self.state.error_message = f"Control error: {e}"
     
     def get_state(self) -> Dict:
         """Get current controller state"""
+        temp_difference = self.state.konrad_temp - self.state.michael_temp
         return {
-            "is_pump_active": self.is_pump_active,
-            "last_state_change": self.last_state_change.isoformat(),
-            "error_state": self.error_state,
-            "last_temperatures": self.last_temps,
-            "source_sensor": self.config.source_sensor,
-            "target_sensor": self.config.target_sensor
+            "konrad_temp": self.state.konrad_temp,
+            "michael_temp": self.state.michael_temp,
+            "temp_difference": temp_difference,
+            "min_temp_difference": self.min_temp_difference,
+            "pump_active": self.state.pump_active,
+            "last_action": self.state.last_action,
+            "last_check_time": self.state.last_check_time.isoformat() if self.state.last_check_time else None,
+            "error_message": self.state.error_message,
+            "running": self.running,
+            "konrad_sensor": self.konrad_sensor,
+            "michael_sensor": self.michael_sensor,
+            "pump_port": self.pump_port
         }
     
     def update(self) -> bool:
-        """
-        Main update function - should be called regularly from main thread.
-        Returns True if update was performed, False if skipped due to interval.
-        """
-        now = datetime.now()
-        
-        # Only check at configured interval
-        if (now - self.last_check).total_seconds() < self.config.check_interval:
-            return False  # Skip update, not enough time passed
-        
-        self.last_check = now
-        
-        try:
-            # Get current temperatures
-            source_temp, target_temp = self.check_temperatures()
-            if source_temp is None or target_temp is None:
-                self.stop_pump()  # Safety: stop pump if no valid readings
-                return True
-            
-            # Determine if pump state should change
-            if self.is_pump_active:
-                if self.should_stop_pump(source_temp, target_temp):
-                    self.stop_pump()
-            else:
-                if self.should_start_pump(source_temp, target_temp):
-                    self.start_pump()
-                    
-            return True
-                    
-        except Exception as e:
-            self.error_state = f"Error in buffer load controller update: {e}"
-            self.logger.error(self.error_state)
-            self.stop_pump()  # Safety: stop pump on error
-            return True
+        """Compatibility method - not used in threaded version"""
+        return True
     
-    def get_update_interval(self) -> float:
-        """Get the update interval in seconds"""
-        return self.config.check_interval
-    
-    def dispose(self) -> None:
+    def dispose(self):
         """Clean up and shut down"""
-        self.stop_pump()
-        self.logger.info("Buffer load controller disposed")
-
+        self.stop()
 
 def create_buffer_load_controller(config, hardware, sensor_manager, logger=None) -> BufferLoadController:
-    """Factory function to create a buffer load controller"""
+    """Factory function to create a simple buffer load controller"""
     
-    buffer_config = BufferLoadConfig(
-        min_temperature_difference=config.buffer_load.min_temperature_difference,
-        hysteresis=config.buffer_load.hysteresis,
-        min_run_time=config.buffer_load.min_run_time,
-        min_off_time=config.buffer_load.min_off_time,
-        check_interval=config.buffer_load.check_interval,
-        source_sensor=config.buffer_load.source_sensor,
-        target_sensor=config.buffer_load.target_sensor,
-        pump_port=config.buffer_load.pump_port  # Use port reference as-is
-    )
+    # Extract configuration from HeatingConfig
+    buffer_config = {
+        'source_sensor': config.buffer_load.source_sensor,
+        'target_sensor': config.buffer_load.target_sensor,
+        'pump_port': config.buffer_load.pump_port,
+        'min_temperature_difference': config.buffer_load.min_temperature_difference
+    }
     
     return BufferLoadController(
         config=buffer_config,
         hardware=hardware,
         sensor_manager=sensor_manager,
-        logger=logger
+        logger=logger or logging.getLogger("buffer_load")
     )

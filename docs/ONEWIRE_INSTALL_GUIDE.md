@@ -141,7 +141,7 @@ ls -la /mnt/1wire/
 # Shows folders like: 28.FC6711040000, 28.B26518040000, etc.
 
 # Read temperature from a specific sensor
-cat /mnt/1wire/28.FC6711040000/temperature
+cat /mnt/1wire/28.70204A050000/temperature
 # Returns: 23.125 (temperature in Celsius)
 
 # Read multiple sensor properties

@@ -51,6 +51,7 @@ class MixerConfig:
     pump_activation_temperature: float = 20.0
     temperature_tolerance: float = 1.0
     mixer_controllers: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    control_parameters: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class HeatingElementConfig:
@@ -70,7 +71,7 @@ class HTTPServiceConfig:
     debug: bool = False
     require_auth: bool = True
     api_key: str = ""
-    rate_limit: str = "100 per hour"
+    rate_limit: str = ""  # Disabled - no rate limiting
     enable_cors: bool = True
     dashboard_file: str = "dashboard.html"
 
@@ -86,8 +87,11 @@ class HeatExchangerConfig:
     control_interval: int = 10        # Read interval in seconds
     temperature_sensor: str = "bhkw_vorlauf"  # Temperature sensor ID
     # Hardware configuration
-    pump_board: int = 1              # PiFace board number for pump
-    pump_port: int = 7               # Port number for pump
+    pump_port: str = "wt_pumpe"       # Port name for pump (references outputs section)
+    # BHKW Detection Configuration
+    require_bhkw_active: bool = True  # Only run heat exchanger when BHKW is active
+    bhkw_status_input: str = "bhkw_running_status"  # Digital input name to read BHKW status
+    bhkw_temp_threshold: float = 30.0  # Fallback: Minimum temperature to consider BHKW active (°C)
 
 @dataclass
 class BufferLoadConfig:
@@ -99,8 +103,7 @@ class BufferLoadConfig:
     check_interval: int = 30                # How often to check temperatures
     source_sensor: str = "puffer_k_mitte"   # Source buffer sensor (Konrad)
     target_sensor: str = "puffer_m_mitte"   # Target buffer sensor (Michael)
-    pump_board: int = 0                     # Board number for pump
-    pump_port: int = 6                      # Port number for pump
+    pump_port: str = "puffer_lade_pumpe"    # Port name for pump (references outputs section)
 
 @dataclass
 class EVCCConfig:
@@ -120,6 +123,14 @@ class EVCCConfig:
     cache_duration: int = 5
 
 @dataclass
+class SystemDataReporterConfig:
+    """System data reporter configuration (temperature, power, running hours)"""
+    enable: bool = True
+    api_url: str = "http://192.168.191.45:8080"
+    report_interval: int = 30
+    timeout: int = 10
+
+@dataclass
 class HeatingConfig:
     system_name: str = "Heating Controller"
     system_version: str = "2.0.0"
@@ -136,6 +147,7 @@ class HeatingConfig:
     sensor_retry_attempts: int = 3
     piface_board_count: int = 2
     pump_port_config: Dict[str, Tuple[int, int]] = field(default_factory=dict)
+    hardware_outputs: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Complete hardware output config
     heating_elements: List[HeatingElementConfig] = field(default_factory=list)
     heating_auto_control: bool = True
     heating_max_simultaneous: int = 2
@@ -150,6 +162,7 @@ class HeatingConfig:
     safety: SafetyLimits = field(default_factory=SafetyLimits)
     http_service: HTTPServiceConfig = field(default_factory=HTTPServiceConfig)
     evcc: EVCCConfig = field(default_factory=EVCCConfig)
+    system_data_reporter: SystemDataReporterConfig = field(default_factory=SystemDataReporterConfig)
 
     @classmethod
     def from_yaml(cls, yaml_path: Union[str, Path]) -> 'HeatingConfig':
@@ -170,7 +183,7 @@ class HeatingConfig:
             http_service.debug = http_config.get('debug', False)
             http_service.require_auth = http_config.get('require_auth', False)
             http_service.api_key = http_config.get('api_key', '')
-            http_service.rate_limit = http_config.get('rate_limit', '100 per hour')
+            http_service.rate_limit = http_config.get('rate_limit', '')  # Default: no rate limiting
             http_service.enable_cors = http_config.get('enable_cors', True)
             http_service.dashboard_file = http_config.get('dashboard_file', 'dashboard.html')
         
@@ -187,12 +200,14 @@ class HeatingConfig:
                     'uuid': sensor_config.get('uuid', '')
                 }
         
-        # Extract pump port configurations
+        # Extract pump port configurations and complete hardware output configs
         pump_port_config = {}
+        hardware_outputs = {}
         if 'hardware' in config_data and 'outputs' in config_data['hardware']:
             for output_name, output_config in config_data['hardware']['outputs'].items():
                 if isinstance(output_config, dict) and 'board' in output_config and 'port' in output_config:
                     pump_port_config[output_name] = (output_config['board'], output_config['port'])
+                    hardware_outputs[output_name] = output_config  # Store complete config including UUID
                 else:
                     print(f"Warning: Invalid output config for {output_name}: {output_config}")
                 
@@ -204,6 +219,8 @@ class HeatingConfig:
             mixer_config.pump_activation_temperature = mixers_data.get('pump_activation_temperature', 20.0)
             mixer_config.temperature_tolerance = mixers_data.get('temperature_tolerance', 1.0)
             mixer_config.mixer_controllers = mixers_data.get('mixer_controllers', {})
+            # Add support for control_parameters
+            mixer_config.control_parameters = mixers_data.get('control_parameters', {})
         
         # Extract heating elements
         heating_elements = []
@@ -220,6 +237,37 @@ class HeatingConfig:
                     max_runtime_minutes=element_config.get('max_runtime_minutes', 60)
                 ))
         
+        # Extract Buffer Load configuration
+        buffer_load_config = BufferLoadConfig()
+        if 'buffer_load' in config_data:
+            buffer_data = config_data['buffer_load']
+            buffer_load_config.min_temperature_difference = buffer_data.get('min_temperature_difference', 2.0)
+            buffer_load_config.hysteresis = buffer_data.get('hysteresis', 1.0)
+            buffer_load_config.min_run_time = buffer_data.get('min_run_time', 60)
+            buffer_load_config.min_off_time = buffer_data.get('min_off_time', 120)
+            buffer_load_config.check_interval = buffer_data.get('check_interval', 30)
+            buffer_load_config.source_sensor = buffer_data.get('source_sensor', 'puffer_k_mitte')
+            buffer_load_config.target_sensor = buffer_data.get('target_sensor', 'puffer_m_mitte')
+            buffer_load_config.pump_port = buffer_data.get('pump_port', 'puffer_lade_pumpe')
+        
+        # Extract Heat Exchanger configuration
+        heat_exchanger_config = HeatExchangerConfig()
+        if 'heat_exchanger' in config_data:
+            heat_data = config_data['heat_exchanger']
+            heat_exchanger_config.target_temperature = heat_data.get('target_temperature', 65.0)
+            heat_exchanger_config.min_temperature = heat_data.get('min_temperature', 50.0)
+            heat_exchanger_config.min_pump_interval = heat_data.get('min_pump_interval', 0.15)
+            heat_exchanger_config.max_interval = heat_data.get('max_interval', 1.0)
+            heat_exchanger_config.min_interval = heat_data.get('min_interval', 0.1)
+            heat_exchanger_config.interval_multiplier = heat_data.get('interval_multiplier', 1.5)
+            heat_exchanger_config.control_interval = heat_data.get('control_interval', 10)
+            heat_exchanger_config.temperature_sensor = heat_data.get('temperature_sensor', 'bhkw_vorlauf')
+            heat_exchanger_config.pump_port = heat_data.get('pump_port', 'wt_pumpe')
+            # BHKW Detection Configuration  
+            heat_exchanger_config.require_bhkw_active = heat_data.get('require_bhkw_active', True)
+            heat_exchanger_config.bhkw_status_input = heat_data.get('bhkw_status_input', 'bhkw_running_status')
+            heat_exchanger_config.bhkw_temp_threshold = heat_data.get('bhkw_temp_threshold', 30.0)
+
         # Extract EVCC configuration
         evcc_config = EVCCConfig()
         if 'evcc' in config_data:
@@ -238,6 +286,22 @@ class HeatingConfig:
             evcc_config.turn_off_hysteresis = evcc_data.get('turn_off_hysteresis', 300.0)
             evcc_config.cache_duration = evcc_data.get('cache_duration', 5)
         
+        # Extract System Data Reporter configuration
+        system_reporter_config = SystemDataReporterConfig()
+        if 'system_data_reporter' in config_data:
+            temp_data = config_data['system_data_reporter']
+            system_reporter_config.enable = temp_data.get('enable', True)
+            system_reporter_config.api_url = temp_data.get('api_url', 'http://192.168.191.45:8080')
+            system_reporter_config.report_interval = temp_data.get('report_interval', 30)
+            system_reporter_config.timeout = temp_data.get('timeout', 10)
+        # Legacy support for old temperature_reporter config name
+        elif 'temperature_reporter' in config_data:
+            temp_data = config_data['temperature_reporter']
+            system_reporter_config.enable = temp_data.get('enable', True)
+            system_reporter_config.api_url = temp_data.get('api_url', 'http://192.168.191.45:8080')
+            system_reporter_config.report_interval = temp_data.get('report_interval', 30)
+            system_reporter_config.timeout = temp_data.get('timeout', 10)
+        
         return cls(
             system_name=safe_get_nested(config_data, ['system', 'name'], 'Heating Controller'),
             system_version=safe_get_nested(config_data, ['system', 'version'], '2.0.0'),
@@ -251,6 +315,7 @@ class HeatingConfig:
             sensor_retry_attempts=safe_get_nested(config_data, ['sensors', 'retry_attempts'], 3),
             piface_board_count=safe_get_nested(config_data, ['hardware', 'piface', 'board_count'], 2),
             pump_port_config=pump_port_config,
+            hardware_outputs=hardware_outputs,
             heating_elements=heating_elements,
             heating_auto_control=heating_elements_config.get('auto_control', True),
             heating_max_simultaneous=heating_elements_config.get('max_simultaneous', 2),
@@ -263,8 +328,11 @@ class HeatingConfig:
             mock_hardware=safe_get_nested(config_data, ['development', 'mock_hardware'], False),
             simulation_mode=safe_get_nested(config_data, ['development', 'simulation_mode'], False),
             mixers=mixer_config,
+            heat_exchanger=heat_exchanger_config,
+            buffer_load=buffer_load_config,
             http_service=http_service,
             evcc=evcc_config,
+            system_data_reporter=system_reporter_config,
         )
     
     def validate(self) -> None:

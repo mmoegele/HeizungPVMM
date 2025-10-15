@@ -43,6 +43,17 @@
             border-radius: 20px;
         }
 
+        .status-label {
+            font-weight: 600;
+            color: #bdc3c7;
+            min-width: 120px;
+        }
+
+        .status-value {
+            font-weight: 500;
+            color: #ecf0f1;
+        }
+
         .status-indicator {
             width: 12px;
             height: 12px;
@@ -153,35 +164,167 @@
             transform: translateX(30px);
         }
 
-        .temp-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
+        .table-container {
+            overflow-x: auto;
         }
 
-        .temp-item {
-            padding: 1rem;
+        .temp-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .temp-table th {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            border-radius: 8px;
-            text-align: center;
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.9rem;
         }
 
-        .temp-name {
-            font-size: 0.875rem;
-            margin-bottom: 0.5rem;
-            opacity: 0.9;
+        .temp-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 0.9rem;
+        }
+
+        .temp-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .temp-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .temp-sensor-id {
+            font-family: 'Courier New', monospace;
+            color: #495057;
+            font-weight: 500;
         }
 
         .temp-value {
-            font-size: 1.5rem;
             font-weight: bold;
-            margin-bottom: 0.25rem;
+            font-size: 1.1rem;
         }
 
-        .temp-description {
+        .temp-value.normal {
+            color: #28a745;
+        }
+
+        .temp-value.warning {
+            color: #ffc107;
+        }
+
+        .temp-value.critical {
+            color: #dc3545;
+        }
+
+        .temp-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
             font-size: 0.75rem;
-            opacity: 0.8;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .temp-status.ok {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .temp-status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .temp-status.critical {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .evcc-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .evcc-table th {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+            color: white;
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .evcc-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 0.9rem;
+        }
+
+        .evcc-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .evcc-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .evcc-value {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .evcc-value.positive {
+            color: #28a745;
+        }
+
+        .evcc-value.negative {
+            color: #dc3545;
+        }
+
+        .evcc-value.warning {
+            color: #ffc107;
+        }
+
+        .evcc-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .evcc-status.excellent {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .evcc-status.good {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .evcc-status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .evcc-status.critical {
+            background-color: #f8d7da;
+            color: #721c24;
         }
 
         .controller-status {
@@ -205,8 +348,183 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 0.5rem;
+            color: #6c757d;
+        }
+
+        .controller-details .main-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .controller-details .status-info {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        .controller-item.heat-exchanger {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-left-color: #2196f3 !important;
+        }
+        
+        .controller-item.heat-exchanger .controller-name {
+            color: #1976d2;
+        }
+
+        .controller-item.evcc-controller {
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+            border-left-color: #ff9800 !important;
+        }
+        
+        .controller-item.evcc-controller .controller-name {
+            color: #f57c00;
+        }
+
+        .controller-item.mixer-fussboden {
+            background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
+            border-left-color: #4caf50 !important;
+        }
+        
+        .controller-item.mixer-fussboden .controller-name {
+            color: #2e7d32;
+        }
+
+        .controller-item.mixer-heizung {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-left-color: #ff9800 !important;
+        }
+        
+        .controller-item.mixer-heizung .controller-name {
+            color: #ef6c00;
+        }
+
+        .controller-item.buffer-load-controller {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+            border-left-color: #9c27b0 !important;
+        }
+        
+        .controller-item.buffer-load-controller .controller-name {
+            color: #7b1fa2;
+        }
+
+        .controller-item.mixer-manager {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+            border-left-color: #9c27b0 !important;
+        }
+        
+        .controller-item.mixer-manager .controller-name {
+            color: #7b1fa2;
+        }
+
+        .logs-container {
+            max-height: 400px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid #e9ecef;
+        }
+
+        .log-entry {
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            background: white;
+            border-radius: 4px;
+            border-left: 3px solid #6c757d;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .log-entry.info {
+            border-left-color: #17a2b8;
+        }
+
+        .log-entry.warning {
+            border-left-color: #ffc107;
+            background: #fff8e1;
+        }
+
+        .log-entry.error {
+            border-left-color: #dc3545;
+            background: #ffebee;
+        }
+
+        .log-entry.debug {
+            border-left-color: #6c757d;
+            background: #f8f9fa;
+        }
+
+        .log-timestamp {
+            color: #6c757d;
+            font-size: 0.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .log-level {
+            display: inline-block;
+            padding: 0.125rem 0.375rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-right: 0.5rem;
+        }
+
+        .log-level.info {
+            background: #cce7f0;
+            color: #0c5460;
+        }
+
+        .log-level.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .log-level.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .log-level.debug {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .log-message {
+            margin-top: 0.25rem;
+        }
+
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .logs-count {
             font-size: 0.875rem;
             color: #6c757d;
+        }
+
+        .logs-refresh {
+            padding: 0.25rem 0.75rem;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+
+        .logs-refresh:hover {
+            background: #0056b3;
         }
 
         .error-message {
@@ -314,8 +632,55 @@
     <div class="main-grid">
         <div class="card">
             <h2>🌡️ Temperature Sensors</h2>
-            <div class="temp-grid" id="temperature-sensors">
-                <!-- Will be populated by JavaScript -->
+            <div class="table-container">
+                <table class="temp-table" id="temperature-table">
+                    <thead>
+                        <tr>
+                            <th>Sensor ID</th>
+                            <th>Temperatur</th>
+                            <th>Beschreibung</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="temperature-sensors">
+                        <!-- Will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- System Data Reporter Status Card -->
+        <div class="card">
+            <h2>📊 System Data Reporter</h2>
+            <div id="system-data-reporter-status">
+                <div class="status-item">
+                    <span class="status-label">Status:</span>
+                    <span id="reporter-status" class="status-value">⏳ Wird geladen...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Letzter Bericht:</span>
+                    <span id="reporter-last-run" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Berichte gesendet:</span>
+                    <span id="reporter-total-sent" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Fehler:</span>
+                    <span id="reporter-errors" class="status-value">0</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">API URL:</span>
+                    <span id="reporter-api-url" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Sensoren:</span>
+                    <span id="reporter-sensor-counts" class="status-value">-</span>
+                </div>
+                <div class="status-item" id="reporter-error-detail" style="display: none;">
+                    <span class="status-label">Letzter Fehler:</span>
+                    <span id="reporter-last-error" class="error-message"></span>
+                </div>
             </div>
         </div>
 
@@ -328,8 +693,60 @@
 
         <div class="card">
             <h2>☀️ EVCC Solar & Battery</h2>
-            <div class="evcc-status" id="evcc-status">
-                <!-- Will be populated by JavaScript -->
+            <div class="table-container">
+                <table class="evcc-table" id="evcc-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Wert</th>
+                            <th>Einheit</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="evcc-status">
+                        <!-- Will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔌 EVCC Ladepunkte</h2>
+            <div class="table-container">
+                <table class="evcc-table" id="loadpoints-table">
+                    <thead>
+                        <tr>
+                            <th>Ladepunkt</th>
+                            <th>Status</th>
+                            <th>Leistung</th>
+                            <th>Fahrzeug</th>
+                            <th>Session</th>
+                        </tr>
+                    </thead>
+                    <tbody id="loadpoints-status">
+                        <!-- Will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🚗 EVCC Fahrzeuge</h2>
+            <div class="table-container">
+                <table class="evcc-table" id="vehicles-table">
+                    <thead>
+                        <tr>
+                            <th>Fahrzeug</th>
+                            <th>Ladestand</th>
+                            <th>Reichweite</th>
+                            <th>Kapazität</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vehicles-status">
+                        <!-- Will be populated by JavaScript -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -348,6 +765,13 @@
                 <!-- Will be populated by JavaScript -->
             </div>
         </div>
+
+        <div class="card">
+            <h2>📋 System Logs</h2>
+            <div class="logs-container" id="system-logs">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
     </div>
 
     <script>
@@ -362,7 +786,8 @@
             temperatures: {},
             outputs: {},
             inputs: {},
-            controllers: {}
+            controllers: {},
+            logs: []
         };
 
         // Configuration mapping for outputs
@@ -377,6 +802,11 @@
             'heizstab_1': { board: 1, port: 0, description: 'Heating Element 1' },
             'heizstab_2': { board: 1, port: 1, description: 'Heating Element 2' },
             'heizstab_3': { board: 1, port: 2, description: 'Heating Element 3' }
+        };
+
+        // Configuration mapping for inputs
+        const INPUT_CONFIG = {
+            'bhkw_running_status': { board: 0, port: 0, description: 'BHKW Running Status' }
         };
 
         // Temperature sensor descriptions
@@ -394,16 +824,37 @@
             'mischer_heizung': 'Radiator Heating Mixer Temperature'
         };
 
-        // Create temperature sensor display
-        function createTemperatureElement(sensorId, temperature, description) {
-            const div = document.createElement('div');
-            div.className = 'temp-item';
-            div.innerHTML = `
-                <div class="temp-name">${sensorId}</div>
-                <div class="temp-value">${temperature.toFixed(1)}°C</div>
-                <div class="temp-description">${description}</div>
+        // Create temperature sensor table row
+        function createTemperatureRow(sensorId, temperature, description) {
+            const row = document.createElement('tr');
+            
+            // Determine temperature status and styling
+            let tempClass = 'normal';
+            let statusClass = 'ok';
+            let statusText = 'OK';
+            
+            if (temperature < 0) {
+                tempClass = 'critical';
+                statusClass = 'critical';
+                statusText = 'Fehler';
+            } else if (temperature > 80) {
+                tempClass = 'critical';
+                statusClass = 'critical';
+                statusText = 'Kritisch';
+            } else if (temperature > 70) {
+                tempClass = 'warning';
+                statusClass = 'warning';
+                statusText = 'Hoch';
+            }
+            
+            row.innerHTML = `
+                <td><span class="temp-sensor-id">${sensorId}</span></td>
+                <td><span class="temp-value ${tempClass}">${temperature.toFixed(1)}°C</span></td>
+                <td>${description}</td>
+                <td><span class="temp-status ${statusClass}">${statusText}</span></td>
             `;
-            return div;
+            
+            return row;
         }
 
         // Create output control element
@@ -434,33 +885,341 @@
             return div;
         }
 
+        // Parse log entry to extract level, timestamp, and message
+        function parseLogEntry(logEntry) {
+            // Try to parse standard Python log format: YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
+            const logRegex = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:,\d{3})?)\s*[-\s]*(\w+)\s*[-\s]*(.*)$/;
+            const match = logEntry.match(logRegex);
+            
+            if (match) {
+                return {
+                    timestamp: match[1],
+                    level: match[2].toLowerCase(),
+                    message: match[3].trim()
+                };
+            }
+            
+            // Fallback: check for level keywords in the message
+            const lowerEntry = logEntry.toLowerCase();
+            let level = 'info';
+            if (lowerEntry.includes('error') || lowerEntry.includes('exception') || lowerEntry.includes('failed')) {
+                level = 'error';
+            } else if (lowerEntry.includes('warning') || lowerEntry.includes('warn')) {
+                level = 'warning';
+            } else if (lowerEntry.includes('debug')) {
+                level = 'debug';
+            }
+            
+            return {
+                timestamp: new Date().toLocaleString(),
+                level: level,
+                message: logEntry
+            };
+        }
+
+        // Create log entry element
+        function createLogElement(logEntry) {
+            const parsed = parseLogEntry(logEntry);
+            const div = document.createElement('div');
+            div.className = `log-entry ${parsed.level}`;
+            
+            div.innerHTML = `
+                <div class="log-timestamp">${parsed.timestamp}</div>
+                <div>
+                    <span class="log-level ${parsed.level}">${parsed.level}</span>
+                    <span class="log-message">${parsed.message}</span>
+                </div>
+            `;
+            
+            return div;
+        }
+
+        // Helper function to format date/time
+        function formatDateTime(timestamp) {
+            if (!timestamp) return 'N/A';
+            try {
+                const date = new Date(timestamp);
+                return date.toLocaleString('de-DE', {
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+            } catch (e) {
+                return timestamp.toString();
+            }
+        }
+
+        // Helper function to get comprehensive thread and action status
+        function getControllerStatusInfo(status) {
+            let statusHtml = '';
+            
+            // Thread health status
+            if (status.thread_healthy === true) {
+                statusHtml += '<div>Thread: ✅ Gesund</div>';
+            } else if (status.thread_healthy === false) {
+                statusHtml += '<div>Thread: ❌ Ungesund</div>';
+            } else if (status.running === true) {
+                statusHtml += '<div>Thread: ▶️ Läuft</div>';
+            } else if (status.running === false) {
+                statusHtml += '<div>Thread: ⏸️ Gestoppt</div>';
+            } else {
+                statusHtml += '<div>Thread: ❔ Unbekannt</div>';
+            }
+            
+            // Last action and timestamp
+            if (status.last_action && status.last_action !== 'none') {
+                statusHtml += `<div>Letzte Aktion: ${status.last_action}</div>`;
+            }
+            if (status.last_action_time || status.last_action_timestamp) {
+                const timestamp = status.last_action_time || status.last_action_timestamp;
+                statusHtml += `<div>Aktion Zeit: ${formatDateTime(timestamp)}</div>`;
+            }
+            
+            return statusHtml;
+        }
+
+        // Backward compatibility function
+        function getThreadHealthStatus(status) {
+            return getControllerStatusInfo(status);
+        }
+
         // Create controller status element
         function createControllerElement(controllerId, status) {
             const div = document.createElement('div');
-            div.className = 'controller-item';
+            div.className = `controller-item ${controllerId.replace('_', '-')}`;
+            
+            // Add health indicator styling
+            if (status.error || status.thread_healthy === false) {
+                div.style.borderLeftColor = '#e74c3c';
+            } else if (status.thread_healthy === true || (status.is_pump_active || status.active_mixers?.length > 0)) {
+                div.style.borderLeftColor = '#27ae60';  
+            } else {
+                div.style.borderLeftColor = '#f39c12';
+            }
             
             let details = '';
+            let displayName = status.name || controllerId.replace(/_/g, ' ').toUpperCase();
+            
             if (controllerId === 'heat_exchanger') {
+                const bhkwIcon = status.bhkw_active ? '🔌' : '⭕';
+                const modeText = status.operation_mode === 'bhkw_inactive' ? 'BHKW Inactive' : status.operation_mode || 'Unknown';
+                const running = status.running ? '▶️ Läuft' : '⏸️ Gestoppt';
+                
                 details = `
-                    <div>Pump: ${status.is_pump_active ? 'ON' : 'OFF'}</div>
-                    <div>BHKW: ${status.bhkw_active ? 'Active' : 'Inactive'}</div>
-                    <div>Temp: ${status.last_temperature ? status.last_temperature.toFixed(1) + '°C' : 'N/A'}</div>
-                    <div>Target: ${status.target_temperature}°C</div>
+                    <div class="main-value">Pumpe: ${status.is_pump_active ? 'AN' : 'AUS'}</div>
+                    <div class="main-value">BHKW: ${bhkwIcon} ${status.bhkw_active ? 'Aktiv' : 'Inaktiv'}</div>
+                    <div class="main-value">Temp: ${status.last_temperature !== null && status.last_temperature !== undefined ? status.last_temperature.toFixed(1) + '°C' : 'N/A'}</div>
+                    <div class="main-value">Ziel: ${status.target_temperature !== null && status.target_temperature !== undefined ? status.target_temperature + '°C' : 'N/A'}</div>
+                    <div>Modus: ${modeText}</div>
+                    <div class="status-info">
+                        Status: ${running} | 
+                        ${getControllerStatusInfo(status).replace(/<div>/g, '').replace(/<\/div>/g, ' | ').replace(/\s*\|\s*$/, '')}
+                    </div>
                 `;
-            } else if (controllerId === 'mixer') {
-                details = '<div>Multiple mixers managed</div>';
-            } else if (controllerId === 'buffer_load') {
+            } else if (controllerId.startsWith('mixer_') && controllerId !== 'mixer_manager') {
+                // Individual mixer controller
+                const currentTemp = (status.current_temperature !== null && status.current_temperature !== undefined) 
+                    ? status.current_temperature.toFixed(1) + '°C' : 'N/A';
+                const targetTemp = (status.target_temperature !== null && status.target_temperature !== undefined) 
+                    ? status.target_temperature.toFixed(1) + '°C' : 'N/A';
+                const tempDiff = (status.temperature_difference !== null && status.temperature_difference !== undefined) 
+                    ? (status.temperature_difference >= 0 ? '+' : '') + status.temperature_difference.toFixed(1) + '°C' : 'N/A';
+                const maxTemp = (status.max_temperature !== null && status.max_temperature !== undefined) 
+                    ? status.max_temperature + '°C' : 'N/A';
+                
+                // Determine valve action with arrow icons
+                const lastAction = status.last_action || 'none';
+                let actionIcon = '⏸️';
+                let actionText = 'Keine Aktion';
+                
+                if (lastAction.includes('open') || lastAction.includes('auf') || lastAction.includes('warming')) {
+                    actionIcon = '↑'; // Arrow up for opening/warming
+                    actionText = 'Öffnen';
+                } else if (lastAction.includes('close') || lastAction.includes('zu') || lastAction.includes('cooling')) {
+                    actionIcon = '↓'; // Arrow down for closing/cooling
+                    actionText = 'Schließen';
+                } else if (lastAction.includes('hold') || lastAction.includes('maintain')) {
+                    actionIcon = '⏸️'; // Pause icon for hold/maintain
+                    actionText = 'Halten';
+                }
+                
+                const running = status.running ? '▶️ Läuft' : '⏸️ Gestoppt';
+                
+                // Get thread health and action time from helper function
+                const threadHealthHtml = getControllerStatusInfo(status);
+                
                 details = `
-                    <div>Pump: ${status.is_pump_active ? 'ON' : 'OFF'}</div>
-                    <div>Source: ${status.source_sensor}</div>
-                    <div>Target: ${status.target_sensor}</div>
+                    <div class="main-value">Aktuell: ${currentTemp}</div>
+                    <div class="main-value">Ziel: ${targetTemp}</div>
+                    <div class="main-value">Maximum: ${maxTemp}</div>
+                    <div class="main-value">Differenz: ${tempDiff}</div>
+                    <div class="status-info">
+                        Status: ${running} | ${actionIcon} ${actionText} | 
+                        ${threadHealthHtml.replace(/<div>/g, '').replace(/<\/div>/g, ' | ').replace(/\s*\|\s*$/, '')}
+                    </div>
+                `;
+            } else if (controllerId === 'mixer_manager') {
+                // Mixer manager summary
+                const activeCount = status.active_mixers || 0;
+                const totalCount = status.total_mixers || 0;
+                const activeMixers = status.active_mixer_list || [];
+                const allMixers = status.mixer_list || [];
+                const running = status.running ? '▶️ Läuft' : '⏸️ Gestoppt';
+                
+                details = `
+                    <div>Status: ${running}</div>
+                    ${getControllerStatusInfo(status)}
+                    <div>Aktive Mixer: ${activeCount}/${totalCount}</div>
+                    <div>Mixer: ${allMixers.join(', ')}</div>
+                    ${activeMixers.length > 0 ? `<div>Aktiv: ${activeMixers.join(', ')}</div>` : '<div>Alle inaktiv</div>'}
+                `;
+            } else if (controllerId === 'buffer_load_controller') {
+                const sourceTemp = (status.source_temp !== null && status.source_temp !== undefined) ? status.source_temp.toFixed(1) + '°C' : 'N/A';
+                const targetTemp = (status.target_temp !== null && status.target_temp !== undefined) ? status.target_temp.toFixed(1) + '°C' : 'N/A';
+                const tempDiff = (status.source_temp !== null && status.source_temp !== undefined && 
+                                 status.target_temp !== null && status.target_temp !== undefined) 
+                                 ? (status.source_temp - status.target_temp).toFixed(1) + '°C' : 'N/A';
+                const lastAction = status.last_action || 'none';
+                const running = status.running ? '▶️ Läuft' : '⏸️ Gestoppt';
+                
+                details = `
+                    <div class="main-value">Pumpe: ${status.is_pump_active ? 'AN' : 'AUS'}</div>
+                    <div class="main-value">Quelle (${status.source_sensor}): ${sourceTemp}</div>
+                    <div class="main-value">Ziel (${status.target_sensor}): ${targetTemp}</div>
+                    <div class="main-value">Temperaturdifferenz: ${tempDiff}</div>
+                    <div class="status-info">
+                        Status: ${running} | 
+                        ${getControllerStatusInfo(status).replace(/<div>/g, '').replace(/<\/div>/g, ' | ').replace(/\s*\|\s*$/, '')}
+                    </div>
+                `;
+            } else if (controllerId === 'evcc_controller') {
+                const threadHealthy = status.thread_healthy === true;
+                const evccConnected = status.evcc_connected === true;
+                const activeElementsCount = status.active_elements_count || 0;
+                const powerCalc = status.power_calculation || {};
+                
+                // Create heating elements status
+                let elementsStatus = '';
+                if (status.heating_elements) {
+                    const activeElements = Object.entries(status.heating_elements)
+                        .filter(([id, elem]) => elem.active)
+                        .map(([id, elem]) => `${id.replace('heizstab_', 'H')}`);
+                    
+                    elementsStatus = activeElements.length > 0 ? activeElements.join(', ') : 'Keine';
+                }
+                
+                // Calculate current power consumption (5/3 kW per heating element as requested)
+                const powerPerElement = 5/3; // 1.67 kW per element
+                const currentConsumption = (activeElementsCount * powerPerElement).toFixed(1);
+                
+                // Priority status icon and text
+                let priorityIcon = '⚡';
+                let priorityText = 'Normal';
+                
+                if (powerCalc.priority_status === 'battery_priority') {
+                    priorityIcon = '🔋';
+                    priorityText = 'Batterie Priorität';
+                } else if (powerCalc.priority_status === 'battery_charging') {
+                    priorityIcon = '🔋';
+                    priorityText = 'Batterie lädt';
+                } else if (powerCalc.priority_status === 'vehicle_priority') {
+                    priorityIcon = '🚗';
+                    priorityText = 'Fahrzeug lädt';
+                } else if (powerCalc.priority_status === 'vehicle_connected') {
+                    priorityIcon = '🔌';
+                    priorityText = 'Fahrzeug verbunden';
+                } else if (powerCalc.priority_status === 'insufficient_surplus') {
+                    priorityIcon = '⚠️';
+                    priorityText = 'Wenig Überschuss';
+                } else if (powerCalc.priority_status === 'heating_allowed') {
+                    priorityIcon = '🔥';
+                    priorityText = 'Heizen erlaubt';
+                }
+                
+                // Battery status info
+                let batteryInfo = '';
+                if (powerCalc.battery_status === 'max_charging') {
+                    batteryInfo = `<div>🔋 Max Ladung (${(powerCalc.battery_power/1000).toFixed(1)}/${(powerCalc.max_battery_charge_power/1000).toFixed(0)}kW)</div>`;
+                } else if (powerCalc.battery_status === 'charging_with_surplus') {
+                    batteryInfo = `<div>🔋 Lädt mit Überschuss (${(powerCalc.battery_power/1000).toFixed(1)}kW)</div>`;
+                } else if (powerCalc.battery_status === 'charging_no_surplus') {
+                    batteryInfo = `<div>🔋 Lädt ohne Überschuss (${(powerCalc.battery_power/1000).toFixed(1)}kW)</div>`;
+                } else if (powerCalc.battery_status === 'discharging') {
+                    batteryInfo = `<div>🔋 Entlädt (${(powerCalc.battery_power/1000).toFixed(1)}kW)</div>`;
+                }
+                
+                // Vehicle charging info
+                let vehicleInfo = '';
+                if (powerCalc.charging_vehicles && powerCalc.charging_vehicles.length > 0) {
+                    const chargingList = powerCalc.charging_vehicles
+                        .map(v => `${v.name}:⚡${(v.power/1000).toFixed(1)}kW`)
+                        .join(', ');
+                    vehicleInfo = `<div>🚗 Lädt: ${chargingList}</div>`;
+                }
+                
+                if (powerCalc.connected_vehicles && powerCalc.connected_vehicles.length > 0) {
+                    const connectedList = powerCalc.connected_vehicles
+                        .map(v => `${v.name}:🔌${(v.max_power/1000).toFixed(0)}kW`)
+                        .join(', ');
+                    vehicleInfo += `<div>🚗 Verbunden: ${connectedList}</div>`;
+                }
+                
+                if (powerCalc.vehicle_power_reserved !== undefined && powerCalc.vehicle_power_reserved > 0) {
+                    vehicleInfo += `<div>Reserviert: ${(powerCalc.vehicle_power_reserved/1000).toFixed(1)}kW</div>`;
+                }
+                
+                details = `
+                    <div class="main-value">PV: ${status.pv_power ? (status.pv_power / 1000).toFixed(1) + ' kW' : 'N/A'}</div>
+                    <div class="main-value">Batterie SoC: ${status.battery_soc !== null && status.battery_soc !== undefined ? status.battery_soc.toFixed(0) + '%' : 'N/A'}</div>
+                    <div class="main-value">Überschuss: ${status.surplus_power !== null && status.surplus_power !== undefined ? (status.surplus_power / 1000).toFixed(1) + ' kW' : 'N/A'}</div>
+                    <div class="main-value">Verfügbar: ${powerCalc.effective_surplus !== undefined ? (powerCalc.effective_surplus / 1000).toFixed(1) + ' kW' : 'N/A'}</div>
+                    <div class="main-value">Verbrauch: ${currentConsumption} kW</div>
+                    <div class="main-value">Heizstäbe: ${activeElementsCount}/3</div>
+                    <div>${priorityIcon} ${priorityText}</div>
+                    ${batteryInfo}
+                    ${vehicleInfo}
+                    <div>Elemente: ${elementsStatus}</div>
+                    <div class="status-info">
+                        EVCC: ${evccConnected ? '🔗 Verbunden' : '❌ Getrennt'} | 
+                        ${powerCalc.priority_reason || 'Normal'} | 
+                        ${getControllerStatusInfo(status).replace(/<div>/g, '').replace(/<\/div>/g, ' | ').replace(/\s*\|\s*$/, '')}
+                    </div>
+                `;
+            } else if (controllerId === 'system_data_reporter') {
+                const running = status.is_running ? '▶️ Läuft' : '⏸️ Gestoppt';
+                const lastReportTime = status.last_report_time ? 
+                    new Date(status.last_report_time).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : 'Nie';
+                const successRate = status.total_reports_sent > 0 ? 
+                    (((status.total_reports_sent - status.total_errors) / status.total_reports_sent) * 100).toFixed(1) : '0';
+                
+                details = `
+                    <div class="main-value">Status: ${running}</div>
+                    <div class="main-value">API: ${status.api_url || 'N/A'}</div>
+                    <div class="main-value">Berichte gesendet: ${status.total_reports_sent || 0}</div>
+                    <div class="main-value">Fehler: ${status.total_errors || 0}</div>
+                    <div class="main-value">Erfolgsrate: ${successRate}%</div>
+                    <div>Letzter Bericht: ${lastReportTime}</div>
+                    <div>Sensoren: 🌡️${status.temperature_sensor_count || 0} ⚡${status.heating_element_count || 0} 🔄${status.pump_count || 0}</div>
+                    <div>Intervall: ${status.report_interval || 30}s</div>
+                    ${status.last_error ? `<div class="error-message">Letzter Fehler: ${status.last_error}</div>` : ''}
+                    <div class="status-info">
+                        ${getControllerStatusInfo(status).replace(/<div>/g, '').replace(/<\/div>/g, ' | ').replace(/\s*\|\s*$/, '')}
+                    </div>
+                `;
+            } else {
+                // Generic controller
+                const running = status.running ? '▶️ Läuft' : '⏸️ Gestoppt';
+                details = `
+                    <div>Status: ${running}</div>
+                    ${getControllerStatusInfo(status)}
+                    <div>Controller aktiv</div>
                 `;
             }
 
             div.innerHTML = `
-                <div class="controller-name">${controllerId.replace('_', ' ').toUpperCase()}</div>
+                <div class="controller-name">${displayName}</div>
                 <div class="controller-details">${details}</div>
                 ${status.error_state ? `<div class="error-message">${status.error_state}</div>` : ''}
+                ${status.error ? `<div class="error-message">Error: ${status.error}</div>` : ''}
             `;
             return div;
         }
@@ -498,8 +1257,8 @@
 
             for (const [sensorId, temperature] of Object.entries(systemState.temperatures)) {
                 const description = TEMP_SENSORS[sensorId] || 'Temperature Sensor';
-                const element = createTemperatureElement(sensorId, temperature, description);
-                container.appendChild(element);
+                const row = createTemperatureRow(sensorId, temperature, description);
+                container.appendChild(row);
             }
         }
 
@@ -520,14 +1279,41 @@
             const container = document.getElementById('digital-inputs');
             container.innerHTML = '';
 
-            // Show inputs for both boards
+            // Show configured inputs first
+            for (const [inputId, config] of Object.entries(INPUT_CONFIG)) {
+                const state = systemState.inputs[`${config.board}-${config.port}`] || 0;
+                const element = createConfiguredInputElement(inputId, config, state);
+                container.appendChild(element);
+            }
+
+            // Show all other inputs for both boards
             for (let board = 0; board < 2; board++) {
                 for (let port = 0; port < 8; port++) {
-                    const state = systemState.inputs[`${board}-${port}`] || 0;
-                    const element = createInputElement(board, port, state, `Board ${board} Input ${port}`);
-                    container.appendChild(element);
+                    // Skip if this input is already configured
+                    const isConfigured = Object.values(INPUT_CONFIG).some(config => 
+                        config.board === board && config.port === port);
+                    
+                    if (!isConfigured) {
+                        const state = systemState.inputs[`${board}-${port}`] || 0;
+                        const element = createInputElement(board, port, state, `Board ${board} Input ${port}`);
+                        container.appendChild(element);
+                    }
                 }
             }
+        }
+
+        // Create configured input display element
+        function createConfiguredInputElement(inputId, config, state) {
+            const div = document.createElement('div');
+            div.className = `output-item ${state ? 'active' : ''}`;
+            div.innerHTML = `
+                <div class="output-info">
+                    <div class="output-name">${inputId}</div>
+                    <div class="output-description">${config.description}</div>
+                </div>
+                <div class="output-toggle ${state ? 'active' : ''}"></div>
+            `;
+            return div;
         }
 
         // Update controller display
@@ -536,12 +1322,119 @@
             container.innerHTML = '';
 
             for (const [controllerId, status] of Object.entries(systemState.controllers)) {
+                // Skip mixer_manager from display
+                if (controllerId === 'mixer_manager') {
+                    continue;
+                }
+                
                 const element = createControllerElement(controllerId, status);
                 container.appendChild(element);
             }
         }
 
-        // Fetch temperatures
+        // Update System Data Reporter display
+        function updateSystemDataReporterDisplay() {
+            const reporterStatus = systemState.controllers.system_data_reporter;
+            
+            if (!reporterStatus) {
+                document.getElementById('reporter-status').textContent = '❌ Nicht verfügbar';
+                document.getElementById('reporter-last-run').textContent = '-';
+                document.getElementById('reporter-total-sent').textContent = '0';
+                document.getElementById('reporter-errors').textContent = '0';
+                document.getElementById('reporter-api-url').textContent = '-';
+                document.getElementById('reporter-sensor-counts').textContent = '-';
+                document.getElementById('reporter-error-detail').style.display = 'none';
+                return;
+            }
+
+            // Update status
+            const running = reporterStatus.is_running ? '▶️ Läuft' : '⏸️ Gestoppt';
+            document.getElementById('reporter-status').textContent = running;
+            
+            // Update last report time
+            const lastReportTime = reporterStatus.last_report_time ? 
+                new Date(reporterStatus.last_report_time).toLocaleString('de-DE', {
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    second: '2-digit',
+                    day: '2-digit',
+                    month: '2-digit'
+                }) : 'Nie';
+            document.getElementById('reporter-last-run').textContent = lastReportTime;
+            
+            // Update statistics
+            document.getElementById('reporter-total-sent').textContent = reporterStatus.total_reports_sent || 0;
+            document.getElementById('reporter-errors').textContent = reporterStatus.total_errors || 0;
+            
+            // Update API URL
+            document.getElementById('reporter-api-url').textContent = reporterStatus.api_url || 'N/A';
+            
+            // Update sensor counts
+            const tempCount = reporterStatus.temperature_sensor_count || 0;
+            const heatingCount = reporterStatus.heating_element_count || 0;
+            const pumpCount = reporterStatus.pump_count || 0;
+            document.getElementById('reporter-sensor-counts').textContent = 
+                `🌡️${tempCount} ⚡${heatingCount} 🔄${pumpCount}`;
+            
+            // Show/hide error details
+            if (reporterStatus.last_error) {
+                document.getElementById('reporter-last-error').textContent = reporterStatus.last_error;
+                document.getElementById('reporter-error-detail').style.display = 'block';
+            } else {
+                document.getElementById('reporter-error-detail').style.display = 'none';
+            }
+        }
+
+        // Fetch full system status (single API call)
+        async function fetchFullSystemStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/system/full_status`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Update all system state from single response
+                    systemState.temperatures = data.temperatures || {};
+                    systemState.outputs = data.digital_io?.outputs || {};
+                    systemState.inputs = data.digital_io?.inputs || {};
+                    systemState.controllers = data.controllers || {};
+                    systemState.evcc = data.evcc || { enabled: false, connected: false };
+                    
+                    // Fetch logs separately (not included in full status for performance)
+                    await fetchSystemLogs();
+                    
+                    // Update system status indicators
+                    document.getElementById('system-status').className = 
+                        'status-indicator ' + (data.system_ok ? 'online' : 'offline');
+                    document.getElementById('api-status').className = 'status-indicator online';
+                    
+                    // Check controller health
+                    const controllersHealthy = Object.values(data.controllers).every(c => 
+                        !c.error && (c.thread_healthy !== false));
+                    document.getElementById('controller-status').className = 
+                        'status-indicator ' + (controllersHealthy ? 'online' : 'offline');
+                    
+                    // Log errors if any
+                    if (data.errors && data.errors.length > 0) {
+                        console.warn('System errors:', data.errors);
+                    }
+                    
+                    return true;
+                } else {
+                    throw new Error('Failed to fetch system status: HTTP ' + response.status);
+                }
+            } catch (error) {
+                console.error('Error fetching full system status:', error);
+                document.getElementById('api-status').className = 'status-indicator offline';
+                document.getElementById('system-status').className = 'status-indicator offline';
+                document.getElementById('controller-status').className = 'status-indicator offline';
+                return false;
+            }
+        }
+
+        // Fallback: Fetch temperatures separately  
         async function fetchTemperatures() {
             try {
                 const response = await fetch(`${API_BASE}/temperatures`, {
@@ -557,7 +1450,7 @@
             }
         }
 
-        // Fetch IO states
+        // Fallback: Fetch IO states separately
         async function fetchIOStates() {
             try {
                 const response = await fetch(`${API_BASE}/io/status`, {
@@ -582,7 +1475,7 @@
             }
         }
 
-        // Fetch system health
+        // Fallback: Fetch system health separately
         async function fetchSystemHealth() {
             try {
                 const response = await fetch(`${API_BASE}/health`, {
@@ -600,7 +1493,7 @@
             }
         }
 
-        // Fetch EVCC status
+        // Fallback: Fetch EVCC status separately
         async function fetchEVCCStatus() {
             try {
                 const response = await fetch(`${API_BASE}/evcc`, {
@@ -618,82 +1511,324 @@
             }
         }
 
+        // Fetch system logs
+        async function fetchSystemLogs() {
+            try {
+                const response = await fetch(`${API_BASE}/system/logs`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    systemState.logs = data.logs || [];
+                    systemState.logsCount = data.count || 0;
+                    systemState.logsSource = data.source || 'system';
+                } else {
+                    console.error('Failed to fetch logs: HTTP', response.status);
+                    systemState.logs = [];
+                }
+            } catch (error) {
+                console.error('Error fetching system logs:', error);
+                systemState.logs = [];
+            }
+        }
+
         // Update EVCC display
         function updateEVCCDisplay() {
             const container = document.getElementById('evcc-status');
             
             if (!systemState.evcc) {
-                container.innerHTML = '<div class="evcc-offline">EVCC data not available</div>';
+                container.innerHTML = '<tr><td colspan="4" class="text-center">EVCC Daten nicht verfügbar</td></tr>';
                 return;
             }
 
             if (!systemState.evcc.enabled) {
-                container.innerHTML = '<div class="evcc-offline">EVCC integration disabled</div>';
+                container.innerHTML = '<tr><td colspan="4" class="text-center">EVCC Integration deaktiviert</td></tr>';
                 return;
             }
 
             if (!systemState.evcc.connected) {
-                container.innerHTML = `<div class="evcc-offline">EVCC offline: ${systemState.evcc.message || systemState.evcc.error || 'Connection failed'}</div>`;
+                container.innerHTML = `<tr><td colspan="4" class="text-center">EVCC offline: ${systemState.evcc.message || systemState.evcc.error || 'Verbindung fehlgeschlagen'}</td></tr>`;
                 return;
             }
 
             // EVCC is connected, show data
             const evccData = [
                 {
-                    name: 'PV Production',
+                    name: 'PV Erzeugung',
                     value: (systemState.evcc.pv_power / 1000).toFixed(1),
                     unit: 'kW',
-                    class: systemState.evcc.pv_power > 0 ? 'positive' : ''
+                    class: systemState.evcc.pv_power > 0 ? 'positive' : '',
+                    status: systemState.evcc.pv_power > 2 ? 'excellent' : systemState.evcc.pv_power > 0 ? 'good' : 'warning',
+                    statusText: systemState.evcc.pv_power > 2 ? 'Hoch' : systemState.evcc.pv_power > 0 ? 'Normal' : 'Niedrig'
                 },
                 {
-                    name: 'Battery SOC',
+                    name: 'Batterie SoC',
                     value: systemState.evcc.battery_soc ? systemState.evcc.battery_soc.toFixed(0) : '--',
                     unit: '%',
-                    class: systemState.evcc.battery_soc > 80 ? 'positive' : systemState.evcc.battery_soc < 20 ? 'negative' : 'warning'
+                    class: systemState.evcc.battery_soc > 80 ? 'positive' : systemState.evcc.battery_soc < 20 ? 'negative' : 'warning',
+                    status: systemState.evcc.battery_soc > 80 ? 'excellent' : systemState.evcc.battery_soc > 50 ? 'good' : systemState.evcc.battery_soc > 20 ? 'warning' : 'critical',
+                    statusText: systemState.evcc.battery_soc > 80 ? 'Hoch' : systemState.evcc.battery_soc > 50 ? 'Normal' : systemState.evcc.battery_soc > 20 ? 'Niedrig' : 'Kritisch'
                 },
                 {
-                    name: 'Grid Power',
+                    name: 'Netz Leistung',
                     value: (systemState.evcc.grid_power / 1000).toFixed(1),
                     unit: 'kW',
-                    class: systemState.evcc.grid_power < 0 ? 'positive' : 'negative'
+                    class: systemState.evcc.grid_power < 0 ? 'positive' : 'negative',
+                    status: systemState.evcc.grid_power < -1 ? 'excellent' : systemState.evcc.grid_power < 0 ? 'good' : systemState.evcc.grid_power < 1 ? 'warning' : 'critical',
+                    statusText: systemState.evcc.grid_power < -1 ? 'Einspeisung' : systemState.evcc.grid_power < 0 ? 'Geringe Einsp.' : systemState.evcc.grid_power < 1 ? 'Ausgleich' : 'Bezug'
                 },
                 {
-                    name: 'Surplus Power',
+                    name: 'Überschuss',
                     value: (systemState.evcc.surplus_power / 1000).toFixed(1),
                     unit: 'kW',
-                    class: systemState.evcc.surplus_power > 0 ? 'positive' : ''
+                    class: systemState.evcc.surplus_power > 0 ? 'positive' : 'negative',
+                    status: systemState.evcc.surplus_power > 2 ? 'excellent' : systemState.evcc.surplus_power > 0 ? 'good' : 'warning',
+                    statusText: systemState.evcc.surplus_power > 2 ? 'Hoch' : systemState.evcc.surplus_power > 0 ? 'Vorhanden' : 'Kein Überschuss'
                 },
                 {
-                    name: 'House Load', 
+                    name: 'Hausverbrauch', 
                     value: (systemState.evcc.house_consumption / 1000).toFixed(1),
                     unit: 'kW',
-                    class: 'warning'
+                    class: 'warning',
+                    status: systemState.evcc.house_consumption > 5 ? 'critical' : systemState.evcc.house_consumption > 3 ? 'warning' : 'good',
+                    statusText: systemState.evcc.house_consumption > 5 ? 'Hoch' : systemState.evcc.house_consumption > 3 ? 'Normal' : 'Niedrig'
                 }
             ];
 
             container.innerHTML = evccData.map(item => `
-                <div class="evcc-item ${item.class}">
-                    <div class="evcc-name">${item.name}</div>
-                    <div class="evcc-value">${item.value}</div>
-                    <div class="evcc-unit">${item.unit}</div>
-                </div>
+                <tr>
+                    <td>${item.name}</td>
+                    <td><span class="evcc-value ${item.class}">${item.value}</span></td>
+                    <td>${item.unit}</td>
+                    <td><span class="evcc-status ${item.status}">${item.statusText}</span></td>
+                </tr>
             `).join('');
+        }
+
+        // Update EVCC Loadpoints display
+        function updateLoadpointsDisplay() {
+            const container = document.getElementById('loadpoints-status');
+            
+            // Check multiple possible data sources
+            const evccController = systemState.controllers?.evcc_controller;
+            const loadpointsData = evccController?.loadpoints;
+            const evccData = systemState.evcc;
+            
+            // Extended debug logging
+            console.log('EVCC Controller:', evccController);
+            console.log('Loadpoints data from controller:', loadpointsData);
+            console.log('EVCC data from system:', evccData);
+            console.log('Full system state:', systemState);
+            
+            if (!loadpointsData || !Array.isArray(loadpointsData) || loadpointsData.length === 0) {
+                // Try alternative data sources
+                const alternativeData = evccData?.loadpoints || systemState.evcc?.loadpoints;
+                console.log('Trying alternative loadpoints source:', alternativeData);
+                
+                if (alternativeData && Array.isArray(alternativeData) && alternativeData.length > 0) {
+                    console.log('Using alternative loadpoints data');
+                    renderLoadpoints(container, alternativeData);
+                    return;
+                }
+                
+                container.innerHTML = `<tr><td colspan="5" class="text-center">
+                    Keine Ladepunkte verfügbar<br>
+                    <small>Debug: Controller=${!!evccController}, Loadpoints=${JSON.stringify(loadpointsData)}</small>
+                </td></tr>`;
+                return;
+            }
+
+            renderLoadpoints(container, loadpointsData);
+        }
+        
+        function renderLoadpoints(container, loadpointsData) {
+            container.innerHTML = loadpointsData.map((lp, index) => {
+                const isCharging = lp.charging || false;
+                const isConnected = lp.connected || false;
+                const isEnabled = lp.enabled || false;
+                const chargePower = (lp.chargePower || 0) / 1000; // Convert W to kW
+                const sessionEnergy = lp.sessionEnergy || 0;
+                const title = lp.title || `Ladepunkt ${index}`;
+                const vehicle = lp.vehicle || '-';
+                
+                // Determine status
+                let status = '⚫ Inaktiv';
+                let statusClass = 'warning';
+                
+                if (!isEnabled) {
+                    status = '🔒 Deaktiviert';
+                    statusClass = 'critical';
+                } else if (isCharging) {
+                    status = '🔋 Lädt';
+                    statusClass = 'excellent';
+                } else if (isConnected) {
+                    status = '🔌 Verbunden';
+                    statusClass = 'good';
+                } else {
+                    status = '⚪ Bereit';
+                    statusClass = 'warning';
+                }
+
+                return `
+                    <tr>
+                        <td>${title}</td>
+                        <td><span class="evcc-status ${statusClass}">${status}</span></td>
+                        <td><span class="evcc-value ${chargePower > 0 ? 'positive' : ''}">${chargePower.toFixed(1)} kW</span></td>
+                        <td>${vehicle}</td>
+                        <td>${sessionEnergy.toFixed(1)} kWh</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Update EVCC Vehicles display  
+        function updateVehiclesDisplay() {
+            const container = document.getElementById('vehicles-status');
+            
+            // Check multiple possible data sources
+            const evccController = systemState.controllers?.evcc_controller;
+            const vehiclesData = evccController?.vehicles;
+            const evccData = systemState.evcc;
+            
+            // Extended debug logging
+            console.log('EVCC Controller:', evccController);
+            console.log('Vehicles data from controller:', vehiclesData);
+            console.log('EVCC data from system:', evccData);
+            
+            if (!vehiclesData || !Array.isArray(vehiclesData) || vehiclesData.length === 0) {
+                // Try alternative data sources
+                const alternativeData = evccData?.vehicles || systemState.evcc?.vehicles;
+                console.log('Trying alternative vehicles source:', alternativeData);
+                
+                if (alternativeData && Array.isArray(alternativeData) && alternativeData.length > 0) {
+                    console.log('Using alternative vehicles data');
+                    renderVehicles(container, alternativeData);
+                    return;
+                }
+                
+                container.innerHTML = `<tr><td colspan="5" class="text-center">
+                    Keine Fahrzeuge konfiguriert<br>
+                    <small>Debug: Controller=${!!evccController}, Vehicles=${JSON.stringify(vehiclesData)}</small>
+                </td></tr>`;
+                return;
+            }
+
+            renderVehicles(container, vehiclesData);
+        }
+        
+        function renderVehicles(container, vehiclesData) {
+            container.innerHTML = vehiclesData.map((vehicle, index) => {
+                const soc = vehicle.soc || 0;
+                const range = vehicle.range || 0;
+                const capacity = vehicle.capacity || 0;
+                const title = vehicle.title || `Fahrzeug ${index + 1}`;
+                
+                // Determine SoC status
+                let socClass = 'warning';
+                let statusText = 'Normal';
+                let statusClass = 'good';
+                
+                if (soc > 80) {
+                    socClass = 'positive';
+                    statusText = 'Voll';
+                    statusClass = 'excellent';
+                } else if (soc > 50) {
+                    socClass = 'positive';
+                    statusText = 'Gut';
+                    statusClass = 'good';
+                } else if (soc > 20) {
+                    socClass = 'warning';
+                    statusText = 'Niedrig';
+                    statusClass = 'warning';
+                } else {
+                    socClass = 'negative';
+                    statusText = 'Kritisch';
+                    statusClass = 'critical';
+                }
+
+                return `
+                    <tr>
+                        <td>${title}</td>
+                        <td><span class="evcc-value ${socClass}">${soc.toFixed(0)}%</span></td>
+                        <td>${range.toFixed(0)} km</td>
+                        <td>${capacity.toFixed(1)} kWh</td>
+                        <td><span class="evcc-status ${statusClass}">${statusText}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Update logs display
+        function updateLogsDisplay() {
+            const container = document.getElementById('system-logs');
+            
+            // Create header with log count and refresh button
+            const header = document.createElement('div');
+            header.className = 'logs-header';
+            header.innerHTML = `
+                <div class="logs-count">
+                    ${systemState.logsCount || systemState.logs.length} log entries
+                    ${systemState.logsSource ? `(${systemState.logsSource})` : ''}
+                </div>
+                <button class="logs-refresh" onclick="refreshLogs()">Refresh</button>
+            `;
+            
+            container.innerHTML = '';
+            container.appendChild(header);
+            
+            if (!systemState.logs || systemState.logs.length === 0) {
+                const noLogs = document.createElement('div');
+                noLogs.className = 'log-entry';
+                noLogs.innerHTML = '<div class="log-message">No system logs available</div>';
+                container.appendChild(noLogs);
+                return;
+            }
+            
+            // Display logs in reverse order (newest first)
+            const reversedLogs = [...systemState.logs].reverse();
+            
+            for (const logEntry of reversedLogs) {
+                const logElement = createLogElement(logEntry);
+                container.appendChild(logElement);
+            }
+            
+            // Auto-scroll to top to show newest logs
+            container.scrollTop = 0;
+        }
+
+        // Refresh logs manually
+        async function refreshLogs() {
+            await fetchSystemLogs();
+            updateLogsDisplay();
         }
 
         // Main update function
         async function updateDashboard() {
-            await Promise.all([
-                fetchTemperatures(),
-                fetchIOStates(),
-                fetchSystemHealth(),
-                fetchEVCCStatus()
-            ]);
+            // Try to fetch all data in single request first
+            const fullStatusSuccess = await fetchFullSystemStatus();
+            
+            // If full status failed, fallback to individual requests
+            if (!fullStatusSuccess) {
+                await Promise.all([
+                    fetchTemperatures(),
+                    fetchIOStates(),
+                    fetchSystemHealth(),
+                    fetchEVCCStatus(),
+                    fetchSystemLogs()
+                ]);
+            }
 
+            // Update all displays
             updateTemperatureDisplay();
             updateOutputDisplay();
             updateInputDisplay();
             updateControllerDisplay();
+            updateSystemDataReporterDisplay();
             updateEVCCDisplay();
+            updateLoadpointsDisplay();
+            updateVehiclesDisplay();
+            updateLogsDisplay();
 
             // Update last update time
             document.getElementById('last-update').textContent = 

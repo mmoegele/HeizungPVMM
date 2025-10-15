@@ -20,7 +20,7 @@ temperature:
 
 # Buffer Loading Configuration
 buffer_load:
-  min_temperature_difference: 2.0  # Minimum temperature difference to start transfer (°C)
+  min_temperature_difference: 5.0  # Minimum temperature difference to start transfer (°C)
   hysteresis: 1.0                 # Hysteresis to prevent rapid cycling (°C)
   min_run_time: 60                # Minimum time pump runs once started (seconds)
   min_off_time: 120               # Minimum time pump stays off between runs (seconds)
@@ -44,59 +44,69 @@ sensors:
   # Temperature Sensor Mappings
   temperature_sensors:
     puffer_k_mitte:
-      path: "/mnt/1wire/28.CBF849050000"
+      path: "/mnt/1wire/28.CBF849050000/temperature"
       description: "Konrad Buffer Middle"
       uuid: "474f6772-4189-43b6-b81d-82783f9ac929"
       
     puffer_k_rueck:
-      path: "/mnt/1wire/28.04A449050000"
+      path: "/mnt/1wire/28.04A449050000/temperature"
       description: "Konrad Buffer Return"
       uuid: "fd556815-fac7-4c49-af8b-da1736f39386"
       
     puffer_k_vorlauf:
-      path: "/mnt/1wire/28.87264A050000"
+      path: "/mnt/1wire/28.87264A050000/temperature"
       description: "Konrad Buffer Forward"
       uuid: "5aa7d4e8-bee2-479d-8d52-024a9aeec5b7"
       
     puffer_m_vorlauf:
-      path: "/mnt/1wire/28.43914A050000"
+      path: "/mnt/1wire/28.43914A050000/temperature"
       description: "Michael Buffer Forward"
       uuid: "6a48582e-5b2c-4310-850c-0236b9823989"
       
     puffer_m_mitte:
-      path: "/mnt/1wire/28.CCDC49050000"
+      path: "/mnt/1wire/28.CCDC49050000/temperature"
       description: "Michael Buffer Middle"
       uuid: "06ae8d39-5914-451d-abf6-9a9f41889ba7"
       
     puffer_m_rueck:
-      path: "/mnt/1wire/28.8B024D050000"
+      path: "/mnt/1wire/28.8B024D050000/temperature"
       description: "Michael Buffer Return"
       uuid: "39aee5e8-010c-447b-b89a-4fce8eaa9f02"
       
     solar_vorlauf:
-      path: "/mnt/1wire/28.76234B050000"
+      path: "/mnt/1wire/28.76234B050000/temperature"
       description: "Solar Forward"
       uuid: "7a935d0f-2c04-4158-82ce-006295005c64"
       
     solar_ruecklauf:
-      path: "/mnt/1wire/28.F0EA49050000"
+      path: "/mnt/1wire/28.F0EA49050000/temperature"
       description: "Solar Return"
       uuid: "9ec9aaf0-c6ac-4b84-91de-50c563040837"
       
     bhkw_vorlauf:
-      path: "/mnt/1wire/28.22F4AA040000"
+      path: "/mnt/1wire/28.22F4AA040000/temperature"
       description: "BHKW Forward Temperature"
       uuid: "7cce5210-900a-4168-b455-5593c7be8554"
       
     mischer_fussboden:
-      path: "/mnt/1wire/28.97A14A050000"
+      path: "/mnt/1wire/28.97A14A050000/temperature"
       description: "Floor Heating Mixer Temperature"
       uuid: "8d7e5f23-9c12-4b56-a891-d42e6f3a8b15"
       
     mischer_heizung:
-      path: "/mnt/1wire/28.70204A050000"
+      path: "/mnt/1wire/28.70204A050000/temperature"
       description: "Radiator Heating Mixer Temperature"
       uuid: "9f8e7d65-4321-4b56-a891-c31e5f2b7a04"
+      
+    zusatz_sensor_1:
+      path: "/mnt/1wire/28.29824A050000/temperature"
+      description: "Additional Temperature Sensor 1"
+      uuid: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+      
+    zusatz_sensor_2:
+      path: "/mnt/1wire/28.5DD849050000/temperature"
+      description: "Additional Temperature Sensor 2"
+      uuid: "b2c3d4e5-f6g7-8901-2345-67890abcdef1"
 
 # HTTP Service Configuration
 http_service:
@@ -106,7 +116,7 @@ http_service:
   debug: true
   require_auth: false
   api_key: ""  # Will be auto-generated if empty
-  rate_limit: "5000 per hour"
+  rate_limit: ""  # Disabled - no rate limiting
   enable_cors: true
   dashboard_file: "dashboard.html"
 
@@ -121,57 +131,90 @@ hardware:
       board: 0
       port: 6
       description: "Buffer Charging Pump"
+      uuid: "b1c2d3e4-f5g6-7h8i-9j0k-1l2m3n4o5p6q"
       
     mischer_1_auf:
       board: 0
       port: 1
       description: "Mixer 1 Open"
+      uuid: "c2d3e4f5-g6h7-8i9j-0k1l-2m3n4o5p6q7r"
       
     mischer_1_zu:
       board: 0
       port: 0
       description: "Mixer 1 Close"
+      uuid: "d3e4f5g6-h7i8-9j0k-1l2m-3n4o5p6q7r8s"
       
     mischer_2_auf:
       board: 0
       port: 4
       description: "Mixer 2 Open"
+      uuid: "e4f5g6h7-i8j9-0k1l-2m3n-4o5p6q7r8s9t"
       
     mischer_2_zu:
       board: 0
       port: 3
       description: "Mixer 2 Close"
+      uuid: "f5g6h7i8-j9k0-1l2m-3n4o-5p6q7r8s9t0u"
       
     wt_pumpe:
       board: 1
       port: 7
       description: "Heat Exchanger Pump"
+      uuid: "g6h7i8j9-k0l1-2m3n-4o5p-6q7r8s9t0u1v"
       
     bhkw_start:
       board: 0
       port: 5
       description: "BHKW Start Signal"
+      uuid: "h7i8j9k0-l1m2-3n4o-5p6q-7r8s9t0u1v2w"
       
     heizstab_1:
       board: 1
       port: 0
       description: "Heating Element 1"
       power_kw: 2.0
+      uuid: "i8j9k0l1-m2n3-4o5p-6q7r-8s9t0u1v2w3x"
       
     heizstab_2:
       board: 1
       port: 1
       description: "Heating Element 2"
       power_kw: 2.0
+      uuid: "j9k0l1m2-n3o4-5p6q-7r8s-9t0u1v2w3x4y"
       
     heizstab_3:
       board: 1
       port: 2
       description: "Heating Element 3"
       power_kw: 2.0
+      uuid: "k0l1m2n3-o4p5-6q7r-8s9t-0u1v2w3x4y5z"
+  
+  # Input Mappings
+  inputs:
+    bhkw_running_status:
+      board: 0
+      port: 0
+      description: "BHKW Running Status"
 
 # Mixer Control Configuration
 mixers:
+  # Global mixer control parameters
+  enable_fixed_temperature: true
+  pump_activation_temperature: 20.0
+  temperature_tolerance: 1.0
+  update_interval: 5  # How often to update mixer states (seconds)
+  
+  # Simple control parameters for mixer movements and timing
+  control_parameters:
+    movement_duration: 2.0         # Base movement duration (seconds)
+    max_movement_duration: 10.0    # Maximum movement duration for large temp differences (seconds)
+    check_interval: 30.0          # Time between temperature checks and actions (seconds)
+    temp_tolerance: 1.0           # Temperature tolerance for fine control (°C)
+    temp_threshold: 3.0           # Temperature threshold before action is taken (°C)
+    dynamic_timing: true          # Enable dynamic timing based on temperature difference
+    safety_off_delay: 0.5         # Safety delay after turning ports off (seconds)
+  
   mixer_controllers:
     fussboden:
       sensor: "mischer_fussboden"
@@ -187,14 +230,26 @@ mixers:
 
 # Heat Exchanger Configuration
 heat_exchanger:
-  target_temperature: 65.0  # Maximum desired temperature
-  min_temperature: 50.0    # Minimum threshold temperature
-  min_pump_interval: 0.15  # How long pump stays on in each cycle (seconds)
-  max_interval: 1.0        # Maximum wait between cycles when cold (seconds)
-  min_interval: 0.1        # Minimum wait between cycles when hot (seconds)
-  control_interval: 1      # How often to check temperature (seconds)
+  target_temperature: 60.0      # Target temperature for cooling (°C) - cool down TO this temp
+  continuous_threshold: 10.0    # If temp diff >= this, run pump continuously (°C)  
+  update_interval: 5.0          # Temperature check interval for non-PWM modes (seconds)
   pump_port: "wt_pumpe"
   temperature_sensor: "bhkw_vorlauf"
+  # BHKW Detection Configuration
+  require_bhkw_active: true     # Only run heat exchanger when BHKW is active
+  bhkw_status_input: "bhkw_running_status"  # Digital input to read BHKW status (references inputs section)
+  bhkw_temp_threshold: 30.0     # Fallback: Minimum temperature to consider BHKW active (°C)
+  # Pump Timing Parameters for Normal Pump Operation
+  minimum_on_time: 0.5          # Minimum pump ON time (seconds) - normal pump minimum
+  minimum_off_time: 0.5         # Minimum pump OFF time (seconds) - normal pump minimum
+  minimum_duty_when_bhkw_running: 15.0  # Minimum duty cycle when BHKW is running (%) - keeps heat under control
+  # PWM Control (Dynamic 1-4 second cycles) - automatically calculated:
+  # Uses minimum 0.5s ON and 0.5s OFF times for normal pump operation
+  # Near target (≤1°C): Fast 1s cycles for precise control
+  # Medium diff (1-3°C): 2s cycles for balanced response  
+  # Large diff (3-5°C): 3s cycles for stable operation
+  # Very large diff (>5°C): 4s cycles for maximum stability
+  # ≥10°C diff: Continuous operation (100% duty cycle)
 
 # EVCC Integration Configuration
 evcc:
@@ -215,7 +270,18 @@ evcc:
   turn_off_hysteresis: 300.0
   cache_duration: 5
 
+# System Data Reporter Configuration (Temperature, Power, Running Hours)
+system_data_reporter:
+  enable: false
+  api_url: "http://192.168.191.45:8080"
+  report_interval: 30  # Report every 30 seconds
+  timeout: 10          # Request timeout in seconds
+
 # Development Settings
 development:
-  demo_mode: true      # Enable for testing - sensors will use mock data
+  demo_mode: false     # Disable for production - use real sensor data
   mock_hardware: false  # Use real PiFace hardware for output control
+
+# System Control Settings
+system_control:
+  main_loop_interval: 5  # Main loop sleep interval in seconds

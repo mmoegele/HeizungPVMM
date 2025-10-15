@@ -199,18 +199,37 @@ pip install pyownet
 # Aktiviere virtuelle Umgebung
 source .venv/bin/activate
 
-# Test 1: I2C Host Adapter erkennen (falls verwendet)
+# Test 1: OWFS System prüfen
+sudo systemctl status owserver
+sudo systemctl status owfs-mount
+mount | grep 1wire
+
+# Test 2: OWFS Sensoren erkennen
+owdir
+ls -la /mnt/1wire/28.*
+
+# Test 3: Temperaturwerte lesen
+echo "=== OWFS Sensor Test ==="
+for sensor in /mnt/1wire/28.*; do
+  if [ -d "$sensor" ]; then
+    id=$(basename "$sensor")
+    temp=$(cat "$sensor/temperature" 2>/dev/null || echo "Error")
+    echo "$id: ${temp}°C"
+  fi
+done
+
+# Test 4: I2C Host Adapter prüfen (falls verwendet)
 sudo i2cdetect -y 1
 # Sollte Gerät bei 0x18 zeigen für DS2482-100
 
-# Test 2: PiFace Boards testen
+# Test 5: PiFace Boards testen
 python3 diagnostics/toggle_piface_outputs.py --boards 2
 # Sollte beide Boards erkennen und Outputs schalten
 
-# Test 3: Temperatur-Sensoren testen
+# Test 6: Temperatur-Sensoren diagnostizieren
 python3 diagnostics/onewire_diagnostics.py --fix-paths
 
-# Test 4: Komplett-Diagnose
+# Test 7: Komplett-System-Diagnose
 python3 diagnostics/dashboard_diagnostics.py
 ```
 
@@ -220,19 +239,38 @@ python3 diagnostics/dashboard_diagnostics.py
 cp heating_config.yaml heating_config.yaml.backup
 nano heating_config.yaml
 
-# Für I2C Host Adapter Setup:
+# Für OWFS Setup (empfohlen - unterstützt sowohl I2C als auch GPIO):
 # - demo_mode: false
 # - mock_hardware: false  
 # - sensors.one_wire_mount_point: "/mnt/1wire"
-# - sensor paths: "/mnt/1wire/28.DEVICE_ID" (ohne /temperature)
+# - sensor paths: "/mnt/1wire/28.DEVICE_ID/temperature"
 
-# Für direkte GPIO Setup:
-# - sensors.one_wire_mount_point: "/sys/bus/w1/devices"  
-# - sensor paths: "/sys/bus/w1/devices/28.DEVICE_ID/w1_slave"
+# WICHTIG: Sensor-Pfade müssen "/temperature" am Ende enthalten!
 
 # Sensor IDs ermitteln:
-# I2C Host Adapter: ls -la /mnt/1wire/28.*
-# Direkte GPIO: ls -la /sys/bus/w1/devices/28.*
+owdir
+ls -la /mnt/1wire/28.*
+
+# Temperatur testen:
+cat /mnt/1wire/28.DEVICE_ID/temperature
+# Sollte direkt einen Temperaturwert (z.B. "23.125") zurückgeben
+
+# Beispiel-Konfiguration:
+# sensors:
+#   one_wire_mount_point: "/mnt/1wire"
+#   temperature_sensors:
+#     sensor_name:
+#       path: "/mnt/1wire/28.70204A050000/temperature"
+#       description: "Sensor Description"
+
+# Alle Sensoren automatisch finden und testen:
+for sensor in /mnt/1wire/28.*; do
+  if [ -d "$sensor" ]; then
+    id=$(basename "$sensor")
+    temp=$(cat "$sensor/temperature" 2>/dev/null || echo "Error")
+    echo "$id: ${temp}°C"
+  fi
+done
 ```
 
 ### 8. Benutzerberechtigungen einrichten
@@ -282,6 +320,54 @@ ExecStartPre=/bin/bash -c 'until [ -d /mnt/1wire ]; do sleep 1; done'
 ExecStartPre=/bin/bash -c 'until ls /mnt/1wire/28.* 2>/dev/null; do sleep 2; done'
 EOF
 
+# WICHTIG: Erst owfs-mount.service erstellen, falls noch nicht geschehen
+# OPTION A: Service mit fstab (erfordert fstab-Eintrag)
+# OPTION B: Service ohne fstab (empfohlen - funktioniert direkt)
+
+# EMPFOHLENE LÖSUNG: Service ohne fstab-Abhängigkeit
+sudo tee /etc/systemd/system/owfs-mount.service << 'EOF'
+[Unit]
+Description=OWFS Filesystem Mount
+After=owserver.service
+Requires=owserver.service
+Before=heating-control.service
+
+[Service]
+Type=forking
+RemainAfterExit=yes
+ExecStartPre=/bin/sleep 3
+ExecStartPre=/bin/mkdir -p /mnt/1wire
+ExecStart=/usr/bin/owfs --server=localhost:4304 /mnt/1wire --allow_other --background
+ExecStop=/bin/umount /mnt/1wire
+TimeoutSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ALTERNATIVE: Wenn du fstab verwenden möchtest
+# Erst fstab-Eintrag erstellen:
+# echo "owfs /mnt/1wire fuse.owfs allow_other,server=localhost:4304 0 0" | sudo tee -a /etc/fstab
+# Dann die originale Service-Datei verwenden:
+# sudo tee /etc/systemd/system/owfs-mount.service << 'EOF'
+# [Unit]
+# Description=OWFS Filesystem Mount
+# After=owserver.service
+# Requires=owserver.service
+# Before=heating-control.service
+# 
+# [Service]
+# Type=oneshot
+# RemainAfterExit=yes
+# ExecStartPre=/bin/sleep 2
+# ExecStart=/bin/mount /mnt/1wire
+# ExecStop=/bin/umount /mnt/1wire
+# TimeoutSec=30
+# 
+# [Install]
+# WantedBy=multi-user.target
+# EOF
+
 # Alle Services aktivieren
 sudo systemctl daemon-reload
 sudo systemctl enable owserver.service
@@ -318,39 +404,165 @@ sudo systemctl status heating-control.service
 # Aktiviere virtuelle Umgebung
 source .venv/bin/activate
 
-# Komplette System-Diagnose durchführen
-python3 diagnostics/dashboard_diagnostics.py
+echo "=== 1. OWFS Service Status ==="
+sudo systemctl status owserver.service
+sudo systemctl status owfs-mount.service
+mount | grep 1wire
 
-# Einzelne Komponenten testen
-echo "=== I2C Host Adapter Test ==="
+echo "=== 2. OWFS Sensor Detection ==="
+owdir
+echo -e "\nDetected sensors in /mnt/1wire:"
+ls -la /mnt/1wire/28.* 2>/dev/null || echo "No sensors found"
+
+echo -e "\n=== 3. Temperature Reading Test ==="
+for sensor in /mnt/1wire/28.*; do
+  if [ -d "$sensor" ]; then
+    id=$(basename "$sensor")
+    temp=$(cat "$sensor/temperature" 2>/dev/null || echo "Read Error")
+    echo "  $id: ${temp}°C"
+  fi
+done
+
+echo -e "\n=== 4. I2C Host Adapter Test (if using I2C) ==="
 sudo i2cdetect -y 1
 
-echo "=== OWFS Mount Test ==="
-ls -la /mnt/1wire/28.*
-
-echo "=== PiFace Test ==="
+echo -e "\n=== 5. PiFace Hardware Test ==="
 python3 diagnostics/toggle_piface_outputs.py --boards 2 --duration 0.5
 
-echo "=== Temperatur Test ==="
+echo -e "\n=== 6. Temperature Sensor Diagnostics ==="
 python3 diagnostics/onewire_diagnostics.py
 
-echo "=== Web-Dashboard Test ==="
+echo -e "\n=== 7. Complete System Diagnostics ==="
+python3 diagnostics/dashboard_diagnostics.py
+
+echo -e "\n=== 8. Web Dashboard Test ==="
 python3 -c "
 import requests
 try:
     response = requests.get('http://localhost:8080/api/status', timeout=5)
-    print(f'Dashboard Status: {response.status_code}')
-    print(f'Response: {response.json()}')
+    print(f'✅ Dashboard Status: {response.status_code}')
+    data = response.json()
+    if 'sensors' in data:
+        print(f'✅ Sensors detected: {len(data[\"sensors\"])}')
+    else:
+        print('⚠️  No sensor data in response')
 except Exception as e:
-    print(f'Dashboard nicht erreichbar: {e}')
+    print(f'❌ Dashboard nicht erreichbar: {e}')
+    print('   Tipp: Starte heating-control.service neu')
 "
 
-# Log-Ausgaben prüfen
-echo "=== Service Logs ==="
-sudo journalctl -u heating-control.service --no-pager -n 20
+echo -e "\n=== 9. Service Status Check ==="
+sudo systemctl status heating-control.service --no-pager -l
+
+echo -e "\n=== 10. Recent Service Logs ==="
+sudo journalctl -u heating-control.service --no-pager -n 20 --since "5 minutes ago"
+
+echo -e "\n=== Installation Complete! ==="
+echo "✅ Wenn alle Tests erfolgreich sind, läuft das System korrekt"
+echo "🌐 Dashboard: http://$(hostname -I | awk '{print $1}'):8080"
+echo "📊 Logs: sudo journalctl -u heating-control.service -f"
 ```
 
 ## Fehlerbehebung
+
+### OWFS Mount Probleme
+```bash
+# SCHRITT 1: Service Status prüfen
+sudo systemctl status owserver.service
+sudo systemctl status owfs-mount.service
+mount | grep 1wire
+
+# SCHRITT 2: Fehlerdetails anzeigen
+journalctl -xeu owfs-mount.service
+journalctl -xeu owserver.service
+
+# SCHRITT 3: Voraussetzungen prüfen
+# a) Mount Point existiert?
+ls -la /mnt/1wire
+# Falls nicht: sudo mkdir -p /mnt/1wire && sudo chmod 755 /mnt/1wire
+
+# b) OWFS Server läuft?
+sudo systemctl status owserver.service
+# Falls nicht: sudo systemctl start owserver.service
+
+# c) fstab Eintrag korrekt?
+grep 1wire /etc/fstab
+# Sollte zeigen: owfs /mnt/1wire fuse.owfs allow_other,server=localhost:4304 0 0
+
+# SCHRITT 4: Manueller Mount-Test
+sudo owfs --server=localhost:4304 /mnt/1wire --allow_other
+# oder für I2C direkt:
+sudo owfs --i2c=/dev/i2c-1 /mnt/1wire --allow_other
+
+# SCHRITT 5: Sensoren testen nach manuellem Mount
+ls -la /mnt/1wire/28.*
+owdir
+
+# SCHRITT 6: Service-Datei korrigieren (Alternative ohne fstab)
+sudo tee /etc/systemd/system/owfs-mount.service << 'EOF'
+[Unit]
+Description=OWFS Filesystem Mount
+After=owserver.service
+Requires=owserver.service
+Before=heating-control.service
+
+[Service]
+Type=forking
+RemainAfterExit=yes
+ExecStartPre=/bin/sleep 2
+ExecStartPre=/bin/mkdir -p /mnt/1wire
+ExecStart=/usr/bin/owfs --server=localhost:4304 /mnt/1wire --allow_other
+ExecStop=/bin/umount /mnt/1wire
+TimeoutSec=30
+PIDFile=/var/run/owfs.pid
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Service neu laden und testen
+sudo systemctl daemon-reload
+sudo systemctl restart owfs-mount.service
+sudo systemctl status owfs-mount.service
+
+# SCHRITT 7: Alternative - OWFS ohne Service direkt starten
+# Falls Services problematisch sind, OWFS manuell im Hintergrund starten:
+sudo pkill -f owfs
+sudo owfs --i2c=/dev/i2c-1 /mnt/1wire --allow_other --background
+# oder via Server:
+sudo owfs --server=localhost:4304 /mnt/1wire --allow_other --background
+```
+
+### Sensor Reading Probleme  
+```bash
+# Sensor-Pfade testen
+for sensor in /mnt/1wire/28.*; do
+  echo "Testing: $sensor"
+  if [ -f "$sensor/temperature" ]; then
+    temp=$(cat "$sensor/temperature" 2>/dev/null)
+    echo "  ✅ $sensor/temperature: $temp°C"
+  else
+    echo "  ❌ $sensor/temperature: File not found"
+  fi
+done
+
+# Python Sensor Test
+python3 -c "
+import os
+sensors = [d for d in os.listdir('/mnt/1wire') if d.startswith('28.')]
+for sensor in sensors:
+    path = f'/mnt/1wire/{sensor}/temperature'
+    try:
+        with open(path, 'r') as f:
+            temp = f.read().strip()
+        print(f'✅ {sensor}: {temp}°C')
+    except Exception as e:
+        print(f'❌ {sensor}: {e}')
+"
+
+# Sensor Konfiguration prüfen
+grep -A5 -B5 "temperature_sensors:" heating_config.yaml
+```
 
 ### I2C Host Adapter Probleme
 ```bash
@@ -390,19 +602,510 @@ ls -la /dev/spidev0.*
 groups $USER
 ```
 
-### Service-Debug
+### Service-Debug und Log-Reading
 ```bash
-# Service-Status detailliert
-sudo systemctl status heating-control.service -l
+# === HEATING SERVICE LOGS LESEN ===
 
-# Service-Logs in Echtzeit
+# 1. Service-Status mit kurzen Logs
+sudo systemctl status heating-control.service
+
+# 2. Service-Status mit vollständigen Logs (empfohlen)
+sudo systemctl status heating-control.service -l --no-pager
+
+# 3. Aktuelle Logs in Echtzeit verfolgen (Live-Monitoring)
 sudo journalctl -u heating-control.service -f
 
-# Alle heating-bezogenen Services
+# 4. Letzte 50 Log-Einträge anzeigen
+sudo journalctl -u heating-control.service -n 50
+
+# 5. Logs seit bestimmter Zeit
+sudo journalctl -u heating-control.service --since "1 hour ago"
+sudo journalctl -u heating-control.service --since "today"
+sudo journalctl -u heating-control.service --since "2025-10-12 20:00:00"
+
+# 6. Logs mit Zeitstempel und Details
+sudo journalctl -u heating-control.service -o verbose
+
+# 7. Alle Logs des Services (von Anfang an)
+sudo journalctl -u heating-control.service --no-pager
+
+# 8. Logs aller verwandter Services zusammen
+sudo journalctl -u owserver.service -u owfs-mount.service -u heating-control.service -f
+
+# === BUFFER LOAD CONTROLLER LOGS SPEZIELL ===
+
+# 1. Zuerst prüfen: Läuft der Service überhaupt?
+sudo systemctl status heating-control.service
+
+# 2. Alle aktuellen Logs anzeigen (ohne Filter)
+sudo journalctl -u heating-control.service -n 50
+
+# 3. Nur Buffer Load Controller Logs anzeigen
+sudo journalctl -u heating-control.service | grep -i "buffer"
+
+# 4. Falls keine Buffer Logs: Nach "initialize" oder "controller" suchen
+sudo journalctl -u heating-control.service | grep -iE "(initialize|controller.*start|main.*start)"
+
+# 5. Buffer Controller Logs in Echtzeit
+sudo journalctl -u heating-control.service -f | grep -i "buffer"
+
+# 6. Falls immer noch nichts: Service-Start prüfen
+sudo journalctl -u heating-control.service --since "10 minutes ago" | head -20
+
+# 3. Buffer Controller Initialisierung prüfen
+sudo journalctl -u heating-control.service | grep -E "(buffer.*initialized|buffer.*started|Pump port)"
+
+# 4. Buffer Pump Aktivierung prüfen
+sudo journalctl -u heating-control.service | grep -E "(pump.*ON|pump.*OFF|Buffer pump)"
+
+# 5. Buffer Controller Temperaturen anzeigen
+sudo journalctl -u heating-control.service | grep -E "(Konrad.*Michael|temperature.*check)"
+
+# 6. Buffer Controller Fehler finden
+sudo journalctl -u heating-control.service | grep -iE "(buffer.*error|buffer.*fail|Invalid port)"
+
+# 7. Letzte Buffer Aktivitäten (30 Min)
+sudo journalctl -u heating-control.service --since "30 minutes ago" | grep -i "buffer"
+
+# 8. Buffer Status mit Kontext (3 Zeilen vor/nach jedem Match)
+sudo journalctl -u heating-control.service -n 100 | grep -A3 -B3 -i "buffer"
+
+# 9. Erwartete Buffer Logs bei korrekter Funktion:
+# "Simple buffer load controller initialized"
+# "Konrad sensor: puffer_k_mitte"
+# "Michael sensor: puffer_m_mitte"  
+# "Pump port: puffer_lade_pumpe"
+# "Buffer pump ON: Konrad=47.5°C > Michael=40.7°C"
+# "Buffer pump OFF: Konrad=45.0°C <= Michael=44.0°C"
+
+# === OWFS SERVICE LOGS LESEN ===
+
+# OWFS Mount Service Logs
+sudo journalctl -u owfs-mount.service -n 20
+sudo journalctl -xeu owfs-mount.service  # Mit Erklärungen
+
+# OWFS Server Logs  
+sudo journalctl -u owserver.service -n 20
+
+# === LOG-FILTERUNG ===
+
+# Nur Fehler anzeigen
+sudo journalctl -u heating-control.service -p err
+
+# Nur Warnungen und Fehler
+sudo journalctl -u heating-control.service -p warning
+
+# Nach spezifischen Begriffen suchen
+sudo journalctl -u heating-control.service | grep -i "error\|fail\|exception"
+sudo journalctl -u heating-control.service | grep -i "temperature"
+sudo journalctl -u heating-control.service | grep -i "sensor"
+
+# === SYSTEM-LOGS ===
+
+# Alle System-Logs der letzten Stunde
+sudo journalctl --since "1 hour ago"
+
+# Kernel-Logs (für Hardware-Probleme)
+dmesg | tail -20
+
+# === LOG-EXPORT ===
+
+# Logs in Datei speichern
+sudo journalctl -u heating-control.service --since "today" > heating_logs_$(date +%Y%m%d).txt
+
+# Kompakte Log-Zusammenfassung
+sudo journalctl -u heating-control.service --since "1 hour ago" --no-pager -o short
+
+# === HILFREICHE KOMBINATIONEN ===
+
+# Service-Status + aktuelle Logs
+sudo systemctl status heating-control.service -l && echo "=== RECENT LOGS ===" && sudo journalctl -u heating-control.service -n 10
+
+# Alle Services prüfen
 sudo systemctl list-units --all | grep -E "(owserver|owfs|heating)"
 
-# Service neu starten
+# Service neu starten und Logs verfolgen
+sudo systemctl restart heating-control.service && sudo journalctl -u heating-control.service -f
+```
+
+### Häufige Service-Probleme
+```bash
+# Fehler: "Unit file owfs-mount.service does not exist"
+# Lösung: Service-Datei manuell erstellen
+sudo tee /etc/systemd/system/owfs-mount.service << 'EOF'
+[Unit]
+Description=OWFS Filesystem Mount
+After=owserver.service
+Requires=owserver.service
+Before=heating-control.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sleep 2
+ExecStart=/bin/mount /mnt/1wire
+ExecStop=/bin/umount /mnt/1wire
+TimeoutSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Dann systemctl daemon-reload und enable erneut ausführen
+sudo systemctl daemon-reload
+sudo systemctl enable owfs-mount.service
+
+# Fehler: "heating-control.service does not exist"
+# Lösung: Service-Datei aus scripts/ Ordner kopieren
+sudo cp scripts/heating-control.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable heating-control.service
+
+# Services in korrekter Reihenfolge prüfen
+sudo systemctl list-dependencies heating-control.service
+
+# === BUFFER LOAD CONTROLLER DEBUG ===
+
+# Buffer Controller sollte bei Temperaturdifferenz > 2°C laufen
+# Prüfen warum Buffer Load Controller nicht läuft:
+
+# 1. Service Status prüfen
+sudo journalctl -u heating-control.service | grep -i "buffer"
+
+# 2. Temperaturen und Controller Status über API prüfen
+curl -s http://localhost:8080/api/status | python3 -m json.tool | grep -A5 -B5 "buffer"
+
+# 3. Buffer Controller Logs in Echtzeit
+sudo journalctl -u heating-control.service -f | grep -i "buffer"
+
+# 4. Manuelle Temperatur-Kontrolle
+echo "=== Buffer Temperature Check ==="
+echo "Konrad (puffer_k_mitte):" $(cat /mnt/1wire/28.CBF849050000/temperature 2>/dev/null || echo "Error")
+echo "Michael (puffer_m_mitte):" $(cat /mnt/1wire/28.XXX/temperature 2>/dev/null || echo "Error - check sensor path")
+
+# 5. Konfiguration prüfen
+grep -A10 "buffer_load:" heating_config.yaml
+
+# 6. PiFace Output Status prüfen (Buffer Load Pump)
+# Welcher Port ist puffer_lade_pumpe?
+grep -A5 "puffer_lade_pumpe:" heating_config.yaml
+
+# 7. Controller direkt testen (Python)
+cd /path/to/HeizungPVMM
+source .venv/bin/activate
+python3 -c "
+from config import load_config
+from sensors import create_sensor_manager
+import logging
+
+config = load_config()
+sensor_manager = create_sensor_manager(config, None)
+temps = sensor_manager.get_valid_temperatures()
+
+konrad_temp = temps.get('puffer_k_mitte', 'Missing')
+michael_temp = temps.get('puffer_m_mitte', 'Missing')
+
+print(f'Konrad: {konrad_temp}°C')
+print(f'Michael: {michael_temp}°C')
+
+if isinstance(konrad_temp, (int, float)) and isinstance(michael_temp, (int, float)):
+    diff = konrad_temp - michael_temp
+    print(f'Difference: {diff:.1f}°C')
+    print(f'Should pump run? {diff > 2.0}')
+else:
+    print('ERROR: Missing temperature readings!')
+"
+
+# 8. Buffer Controller Status via Dashboard API
+curl -s "http://localhost:8080/api/buffer_load" 2>/dev/null || echo "API not available"
+
+# 9. Häufige Buffer Controller Probleme
+
+# Fehler: "Invalid port reference: X" (wo X eine Zahl ist)
+# Problem: Config-Klassen hatten pump_port als int definiert, sollte aber string sein
+# Lösung: In config.py beide Config-Klassen korrigieren:
+# 
+# BufferLoadConfig:
+# pump_port: str = "puffer_lade_pumpe"  # statt pump_port: int = 6
+# 
+# HeatExchangerConfig: 
+# pump_port: str = "wt_pumpe"  # statt pump_port: int = 7
+# 
+# Diese Änderung macht die Konfiguration konsistent mit der YAML-Datei.
+
+# KRITISCHER BUGFIX: YAML Parsing war unvollständig!
+# Problem: config.py from_yaml() Method hat buffer_load und heat_exchanger nicht geparst
+# Lösung: Fehlende Parsing-Logik in config.py hinzugefügt für beide Konfigurationssektionen
+
+# Wenn nach der Änderung immer noch "Pump port: 6" in Logs steht:
+# 1. Python Bytecode Cache leeren:
+find /path/to/HeizungPVMM -name "*.pyc" -delete
+find /path/to/HeizungPVMM -name "__pycache__" -type d -exec rm -rf {} +
+
+# 2. Service komplett neu starten:
+sudo systemctl stop heating-control.service
+sleep 2
+sudo systemctl start heating-control.service
+
+# 3. Konfiguration debuggen:
+cd /path/to/HeizungPVMM
+source .venv/bin/activate
+python3 -c "
+from config import load_complete_config
+config, _ = load_complete_config('heating_config.yaml')
+print('Buffer Load Configuration:')
+print('  pump_port:', repr(config.buffer_load.pump_port))
+print('  type:', type(config.buffer_load.pump_port))
+print('  source_sensor:', repr(config.buffer_load.source_sensor))
+print('  target_sensor:', repr(config.buffer_load.target_sensor))
+"
+
+# 4. YAML-Datei direkt prüfen:
+grep -A5 -B5 "pump_port" heating_config.yaml
+
+# Fehler: "Buffer controller not starting"  
+# Prüfen ob heating_config.yaml korrekt ist:
+grep -A5 "buffer_load:" heating_config.yaml
+# Sollte zeigen:
+# buffer_load:
+#   source_sensor: "puffer_k_mitte"
+#   target_sensor: "puffer_m_mitte"  
+#   pump_port: "puffer_lade_pumpe"
+
+# Und outputs Sektion sollte haben:
+grep -A3 "puffer_lade_pumpe:" heating_config.yaml
+# Sollte zeigen:
+# puffer_lade_pumpe:
+#   board: 0
+#   port: 6
+#   description: "Buffer Charging Pump"
+```
+
+## Simplified Heat Exchanger Controller
+
+### Übersicht
+Der Wärmetauscher-Controller wurde vereinfacht und verwendet jetzt eine selbstverwaltete Thread-Architektur mit intelligenter temperaturbasierter Pumpensteuerung.
+
+### Funktionsweise
+**Temperaturbasierte Steuerungsstrategie:**
+
+1. **Große Temperaturdifferenz (>10°C vom Zielwert)**: 
+   - Pumpe läuft **kontinuierlich**
+   - Beispiel: Ziel 65°C, aktuell 50°C → Differenz 15°C → kontinuierlich
+
+2. **Kleine Temperaturdifferenz (<3°C vom Zielwert)**:
+   - **Intervall-Modus**: 15s AN / 45s AUS
+   - Beispiel: Ziel 65°C, aktuell 63°C → Differenz 2°C → Intervall
+
+3. **Mittlere Temperaturdifferenz (3-10°C)**:
+   - Pumpe läuft **kontinuierlich**
+
+4. **Sensorfehler oder ungültige Werte**:
+   - **Sicherheitsmodus**: Pumpe AN (Überhitzungsschutz)
+
+### Konfiguration (heating_config.yaml)
+```yaml
+heat_exchanger:
+  target_temperature: 65.0      # Zieltemperatur (°C)
+  continuous_threshold: 10.0    # Schwelle für kontinuierlichen Betrieb (°C)
+  interval_threshold: 3.0       # Schwelle für Intervall-Modus (°C)
+  pump_on_time: 15.0           # Pumpe AN-Zeit im Intervall-Modus (Sekunden)
+  pump_off_time: 45.0          # Pumpe AUS-Zeit im Intervall-Modus (Sekunden)  
+  update_interval: 5.0         # Prüfintervall (Sekunden)
+  pump_port: "wt_pumpe"        # Pumpensteuerung
+  temperature_sensor: "bhkw_vorlauf"  # Temperatursensor
+```
+
+### Thread-Management
+- **Self-Managed Threading**: Der Controller verwaltet seinen eigenen Thread
+- **Automatischer Start/Stop**: `.start()` und `.stop()` Methoden
+- **Thread Monitoring**: Automatische Überwachung und Neustart bei Ausfall
+- **Graceful Shutdown**: Sauberes Herunterfahren mit Pumpe AUS
+
+### Logs und Debugging
+```bash
+# Heat Exchanger Logs anschauen:
+sudo journalctl -u heating-control.service | grep "heat_exchanger\|Heat exchanger"
+
+# Typische Log-Meldungen:
+[INFO] 🚀 Heat exchanger controller started
+[INFO] 💧 Heat exchanger pump: ON  
+[INFO] 💧 Heat exchanger pump: OFF
+[INFO] 🌡️ Continuous mode: 55.2°C (diff: 9.8°C)
+[INFO] 🔄 Interval mode: Pump ON (waited 45.0s)
+[INFO] ⚠️ Temperature sensor error - pump ON for safety
+[INFO] 🛑 Heat exchanger controller stopped
+
+# Status abfragen:
+curl http://localhost:8080/api/status | jq '.heat_exchanger'
+```
+
+### Troubleshooting Heat Exchanger
+```bash
+# 1. Controller Status prüfen:
+grep -A10 "heat_exchanger:" heating_config.yaml
+
+# 2. Sensor verfügbar?
+curl http://localhost:8080/api/sensors | grep bhkw_vorlauf
+
+# 3. Pump Port konfiguriert?
+grep -A3 "wt_pumpe:" heating_config.yaml
+
+# 4. Thread läuft?
+sudo journalctl -u heating-control.service --since "5 min ago" | grep "Heat exchanger"
+
+# 5. Manueller Test der Pumpe:
+cd /path/to/HeizungPVMM
+source .venv/bin/activate  
+python3 test/test_simplified_heat_exchanger.py
+```
+
+### Häufige Heat Exchanger Probleme
+
+#### Problem: "Temperature sensor error - pump ON for safety"
+```bash
+# Sensor prüfen:
+owdir | grep 28.
+ls -la /mnt/1wire/28.*/temperature
+
+# OWFS neu starten:
+sudo systemctl restart owfs-mount.service
+```
+
+#### Problem: "Pump läuft nicht im Intervall-Modus"
+```bash
+# Konfiguration prüfen:
+python3 -c "
+from config import load_complete_config
+config, _ = load_complete_config('heating_config.yaml')
+print('Heat Exchanger Config:')
+print('  target_temp:', config.heat_exchanger.target_temperature)
+print('  continuous_threshold:', getattr(config.heat_exchanger, 'continuous_threshold', 'NOT SET'))
+print('  interval_threshold:', getattr(config.heat_exchanger, 'interval_threshold', 'NOT SET'))
+"
+```
+
+#### Problem: "Thread monitoring meldet Heat Exchanger Neustart"
+```bash
+# Zu häufige Neustarts können auf Speichermangel hindeuten:
+free -h
+sudo journalctl -u heating-control.service | grep "Heat exchanger.*died" | tail -10
+```
+
+## Thread Monitoring & Automatische Wiederherstellung
+
+### Übersicht
+Das System implementiert umfassendes Thread-Monitoring für alle kritischen Komponenten:
+- **Buffer Load Controller**: Pufferladesteuerung-Thread  
+- **Heat Exchanger**: Wärmetauscher-Thread (main.py verwaltet)
+- **Mixer Controllers**: Mischer-Controller-Threads (pro Mischer ein Thread)
+- **HTTP Service**: Webinterface-Thread
+
+### Funktionsweise
+Das System prüft **alle 50 Sekunden** (alle 10 Hauptschleifeniterationen) die Gesundheit aller Threads:
+
+```bash
+# In den Logs erkennbar durch:
+[INFO] 📊 Thread monitoring: Checking all critical threads...
+[INFO] 🔄 Buffer load controller thread died, restarting...
+[INFO] ✅ Buffer load controller thread restarted successfully
+[INFO] 📊 Mixer thread monitoring: 1 threads restarted
+[INFO] 🔄 Heat exchanger thread died, restarting...
+[INFO] ✅ Heat exchanger thread restarted successfully
+```
+
+### Thread Restart Strategie
+Bei erkanntem Thread-Ausfall:
+1. **Sauberer Stop**: Vorhandenen Thread ordnungsgemäß beenden
+2. **Kurze Pause**: 1 Sekunde warten für vollständige Bereinigung
+3. **Neustart**: Neuen Thread mit identischer Konfiguration starten
+4. **Logging**: Erfolg/Fehler protokollieren
+
+### Monitoring Details
+
+#### Buffer Load Controller
+```python
+# Überwacht in main.py _check_and_restart_threads():
+if self.buffer_load_controller.running and (
+    not self.buffer_load_controller.thread or 
+    not self.buffer_load_controller.thread.is_alive()
+):
+    # Automatischer Neustart
+```
+
+#### Mixer Controller
+```python  
+# Überwacht über MixerManager.check_and_restart_threads():
+restart_status = self.mixer_manager.check_and_restart_threads()
+# Gibt Dict zurück: {"mixer1": False, "mixer2": True} 
+# True = Thread wurde neu gestartet
+```
+
+#### Heat Exchanger & HTTP Service
+```python
+# Direkt in main.py überwacht:
+if not self.heat_exchanger_thread.is_alive():
+    # Neuen Thread erstellen und starten
+    
+if not self.http_service.server_thread.is_alive():  
+    # HTTP Service neu starten
+```
+
+### Troubleshooting Thread-Probleme
+
+#### Häufige Thread-Ausfälle
+```bash
+# Logs nach Thread-Neustarts durchsuchen:
+sudo journalctl -u heating-control.service | grep "thread died\|thread restarted"
+
+# Häufige Ursachen:
+# 1. Sensorfehler -> Buffer/Mixer Controller Crash
+# 2. Hardware-Kommunikationsfehler -> PiFace-Thread Crash  
+# 3. Speichermangel -> Zufällige Thread-Ausfälle
+# 4. Konfigurationsfehler -> Controller-Initialisierung schlägt fehl
+```
+
+#### Thread Monitoring deaktivieren (Debugging)
+```python
+# In main.py run() Methode:
+# Kommentiere diese Zeile aus:
+# if loop_count % 10 == 0:
+#     self._check_and_restart_threads()
+```
+
+#### Manueller Thread-Neustart (Emergency)
+```bash
+# Kompletten Service neu starten:
 sudo systemctl restart heating-control.service
+
+# Oder Python-Prozess neu starten:
+sudo pkill -f "python.*main.py"
+sudo systemctl start heating-control.service
+```
+
+#### Thread-Status prüfen  
+```bash
+# Aktuelle Thread-Anzahl prüfen:
+ps -eLf | grep python | grep heating | wc -l
+
+# Detaillierte Thread-Info:
+ps -eLf | grep python | grep heating
+
+# Memory-Usage pro Thread:
+top -H -p $(pgrep -f "python.*main.py")
+```
+
+### Test Thread Monitoring
+```bash
+# Thread Monitoring Tests ausführen:
+cd /path/to/HeizungPVMM
+source .venv/bin/activate
+
+# Basis Thread Monitoring Test:
+python test/test_thread_monitoring.py
+
+# Umfassender Test aller Komponenten:
+python test/test_comprehensive_thread_monitoring.py
 ```
 
 ## Deinstallation
