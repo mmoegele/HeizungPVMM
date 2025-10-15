@@ -158,18 +158,26 @@ class HeatExchangerController:
     def get_sensor_diagnostics(self) -> Dict:
         """Get sensor diagnostics information"""
         try:
-            temps = self.sensor_manager.get_valid_temperatures()
-            available_sensors = list(temps.keys())
+            # Get all temperature readings (like System Data Reporter does)
+            all_temps = self.sensor_manager.read_all_temperatures()
+            
+            # Extract valid sensors manually
+            valid_sensors = {}
+            for sensor_id, reading in all_temps.items():
+                if reading.is_valid and reading.error is None:
+                    valid_sensors[sensor_id] = reading.value
+            
+            available_sensors = list(valid_sensors.keys())
             
             diagnostics = {
                 'target_sensor': self.temp_sensor,
-                'sensor_available': self.temp_sensor in temps,
+                'sensor_available': self.temp_sensor in valid_sensors,
                 'available_sensors': available_sensors,
                 'sensor_count': len(available_sensors)
             }
             
-            if self.temp_sensor in temps:
-                temp_value = temps[self.temp_sensor]
+            if self.temp_sensor in valid_sensors:
+                temp_value = valid_sensors[self.temp_sensor]
                 diagnostics['sensor_value'] = temp_value
                 diagnostics['sensor_valid'] = temp_value is not None and 0 <= temp_value <= 150
             
@@ -222,29 +230,24 @@ class HeatExchangerController:
     def _read_temperature(self) -> Optional[float]:
         """Read current temperature from sensor with detailed error reporting"""
         try:
-            temps = self.sensor_manager.get_valid_temperatures()
+            # Get all temperature readings (like System Data Reporter does)
+            all_temps = self.sensor_manager.read_all_temperatures()
             
-            # Debug: Show available sensors occasionally
-            if not hasattr(self, '_sensor_debug_counter'):
-                self._sensor_debug_counter = 0
-            self._sensor_debug_counter += 1
-            
-            if self._sensor_debug_counter % 100 == 0:  # Every 100 calls
-                available_sensors = list(temps.keys())
-                self.logger.debug(f"Available temperature sensors: {available_sensors}")
-            
-            if self.temp_sensor in temps:
-                temp = temps[self.temp_sensor]
-                if temp is not None and 0 <= temp <= 150:  # Valid temperature range
-                    return temp
+            # Extract valid temperature manually
+            if self.temp_sensor in all_temps:
+                reading = all_temps[self.temp_sensor]
+                if reading.is_valid and reading.error_message is None:
+                    temp = reading.value
+                    if temp is not None and 0 <= temp <= 150:  # Valid temperature range
+                        return temp
+                    else:
+                        self.logger.debug(f"Temperature {temp}°C out of valid range for sensor {self.temp_sensor}")
+                        return None
                 else:
-                    # Throttled logging for invalid temperature readings
-                    self._log_throttled("warning", f"Invalid temperature reading from '{self.temp_sensor}': {temp} (expected 0-150°C)", "invalid_temp")
+                    self.logger.debug(f"Sensor {self.temp_sensor}: valid={reading.is_valid}, error={reading.error_message}")
                     return None
             else:
-                # Throttled logging for missing sensors - provide available sensors info
-                available_sensors = list(temps.keys()) if temps else []
-                self._log_throttled("warning", f"Temperature sensor '{self.temp_sensor}' not available. Available sensors: {available_sensors}", "missing_sensor")
+                self.logger.debug(f"Sensor {self.temp_sensor} not found in temperature readings")
                 return None
         except Exception as e:
             self.logger.error(f"Error reading temperature from sensor manager: {e}")

@@ -42,7 +42,7 @@ class BufferLoadController:
         self.konrad_sensor = config.get('source_sensor', 'puffer_k_mitte')
         self.michael_sensor = config.get('target_sensor', 'puffer_m_mitte') 
         self.pump_port = config.get('pump_port', 'puffer_lade_pumpe')
-        self.min_temp_difference = config.get('min_temperature_difference', 5.0)  # Minimum temperature difference to start pump
+        self.min_temp_difference = config.get('min_temperature_difference', 3.0)  # Minimum temperature difference to start pump
         self.check_interval = 60.0  # 1 minute between checks
         
         # State
@@ -108,11 +108,29 @@ class BufferLoadController:
     def _check_and_control(self):
         """Check temperatures and control pump"""
         try:
-            # Get current temperatures
-            temps = self.sensor_manager.get_valid_temperatures()
+            # Get all temperature readings (like System Data Reporter does)
+            all_temps = self.sensor_manager.read_all_temperatures()
             
-            konrad_temp = temps.get(self.konrad_sensor)
-            michael_temp = temps.get(self.michael_sensor)
+            # Extract valid temperatures manually
+            konrad_temp = None
+            michael_temp = None
+            
+            if self.konrad_sensor in all_temps:
+                reading = all_temps[self.konrad_sensor]
+                if reading.is_valid and reading.error_message is None:
+                    konrad_temp = reading.value
+                else:
+                    self.logger.debug(f"Konrad sensor {self.konrad_sensor}: valid={reading.is_valid}, error={reading.error_message}")
+            
+            if self.michael_sensor in all_temps:
+                reading = all_temps[self.michael_sensor]
+                if reading.is_valid and reading.error_message is None:
+                    michael_temp = reading.value
+                else:
+                    self.logger.debug(f"Michael sensor {self.michael_sensor}: valid={reading.is_valid}, error={reading.error_message}")
+            
+            # Debug logging
+            self.logger.debug(f"Temperature readings: {self.konrad_sensor}={konrad_temp}°C, {self.michael_sensor}={michael_temp}°C")
             
             if konrad_temp is None or michael_temp is None:
                 # No valid temperatures - turn off pump for safety

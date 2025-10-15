@@ -65,9 +65,14 @@ class SystemDataReporter:
         """Initialize tracking for heating elements power consumption"""
         try:
             self.logger.debug("Starting heating element power tracking initialization")
+            self.logger.debug(f"Config type: {type(self.config)}")
+            self.logger.debug(f"Config has hardware: {hasattr(self.config, 'hardware')}")
+            
             # Get hardware outputs from hardware.outputs which contains the complete configuration
             if hasattr(self.config, 'hardware') and hasattr(self.config.hardware, 'outputs'):
+                self.logger.debug(f"Found hardware.outputs with {len(self.config.hardware.outputs)} outputs")
                 for output_name, output_config in self.config.hardware.outputs.items():
+                    self.logger.debug(f"Checking output: {output_name}")
                     # Look for heating elements (heizstab)
                     if 'heizstab' in output_name.lower():
                         power_kw = output_config.get('power_kw', 2.0)
@@ -83,6 +88,10 @@ class SystemDataReporter:
                         self.logger.debug(f"Added heating element tracking: {output_name}")
             else:
                 self.logger.warning("No hardware.outputs configuration found")
+                if hasattr(self.config, 'hardware'):
+                    self.logger.debug(f"Hardware config exists but no outputs: {dir(self.config.hardware)}")
+                else:
+                    self.logger.debug("No hardware configuration found")
             
             self.logger.info(f"Initialized power tracking for {len(self._heating_element_states)} heating elements")
         except Exception as e:
@@ -97,7 +106,9 @@ class SystemDataReporter:
             pump_names = ['puffer_lade_pumpe', 'wt_pumpe']
             
             if hasattr(self.config, 'hardware') and hasattr(self.config.hardware, 'outputs'):
+                self.logger.debug(f"Looking for pumps in {len(self.config.hardware.outputs)} outputs: {list(self.config.hardware.outputs.keys())}")
                 for pump_name in pump_names:
+                    self.logger.debug(f"Looking for pump: {pump_name}")
                     if pump_name in self.config.hardware.outputs:
                         output_config = self.config.hardware.outputs[pump_name]
                         self._pump_states[pump_name] = {
@@ -112,7 +123,7 @@ class SystemDataReporter:
                     else:
                         self.logger.warning(f"Pump {pump_name} not found in hardware.outputs configuration")
             else:
-                self.logger.warning("No hardware.outputs configuration found")
+                self.logger.warning("No hardware.outputs configuration found for pump tracking")
             
             self.logger.info(f"Initialized pump tracking for {len(self._pump_states)} pumps")
         except Exception as e:
@@ -368,10 +379,10 @@ class SystemDataReporter:
                 timeout=(5, 30)  # (connection timeout, read timeout)
             )
             
-            # Check response
-            if response.status_code == 200:
+            # Check response - accept both 200 (OK) and 201 (Created) as success
+            if response.status_code in [200, 201]:
                 sensor_count = len(data.get('data', []))
-                self.logger.debug(f"Successfully sent {sensor_count} sensor records to {url}")
+                self.logger.debug(f"Successfully sent {sensor_count} sensor records to {url} (HTTP {response.status_code})")
                 return True
             else:
                 error_msg = f"HTTP {response.status_code}: {response.text[:200]}"  # Limit error text

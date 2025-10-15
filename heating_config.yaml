@@ -260,19 +260,15 @@ evcc:
   min_battery_soc_for_heating: 50.0
   max_battery_soc_for_aggressive: 80.0
   max_temperature_for_heating: 70.0
-  heating_thresholds:
-    - 2000.0
-    - 4000.0
-    - 6000.0
   min_surplus_duration: 120
-  heating_element_power: 2000.0
+  heating_element_power: 1700.0
   turn_on_hysteresis: 200.0
   turn_off_hysteresis: 300.0
   cache_duration: 5
 
 # System Data Reporter Configuration (Temperature, Power, Running Hours)
 system_data_reporter:
-  enable: false
+  enable: true
   api_url: "http://192.168.191.45:8080"
   report_interval: 30  # Report every 30 seconds
   timeout: 10          # Request timeout in seconds

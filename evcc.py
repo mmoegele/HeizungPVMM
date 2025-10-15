@@ -273,8 +273,8 @@ class EVCCController:
             if not state:
                 return {'error': 'No EVCC data available'}
             
-            # Battery configuration
-            max_battery_charge_power = 10000  # 10kW max charging power
+            # Battery configuration from config or defaults
+            max_battery_charge_power = 10000  # 10kW max charging power (could be made configurable)
             battery_power = state.battery_power
             
             # Get loadpoints for vehicle charging calculation
@@ -313,83 +313,57 @@ class EVCCController:
                         'max_power': max_vehicle_charge_power
                     })
             
-            # Get heating element power
-            power_kw = 2.0
-            if hasattr(self.config, 'evcc') and hasattr(self.config.evcc, 'heating_element_power'):
-                try:
-                    power_kw = self.config.evcc.heating_element_power / 1000.0
-                except Exception:
-                    pass
+            # Get heating element power from config
+            heating_element_power = getattr(self.config.evcc, 'heating_element_power', 2000.0)
+            power_kw = heating_element_power / 1000.0
             
-            # Calculate battery surplus availability
-            battery_surplus_available = 0
-            battery_status = "not_charging"
-            
-            if battery_power > 0:  # Battery is charging
-                if battery_power >= max_battery_charge_power:
-                    battery_surplus_available = state.surplus_power
-                    battery_status = "max_charging"
-                else:
-                    remaining_battery_capacity = max_battery_charge_power - battery_power
-                    if state.surplus_power > remaining_battery_capacity:
-                        battery_surplus_available = state.surplus_power - remaining_battery_capacity
-                        battery_status = "charging_with_surplus"
-                    else:
-                        battery_surplus_available = 0
-                        battery_status = "charging_no_surplus"
-            else:
-                battery_surplus_available = state.surplus_power
-                battery_status = "not_charging" if battery_power == 0 else "discharging"
-            
-            # Calculate vehicle power reservation
-            vehicle_power_to_reserve = vehicle_max_potential  # Reserve full potential of connected vehicles
-            
-            # Calculate available power for heating
+            # Updated surplus calculation logic
+            min_battery_soc = getattr(self.config.evcc, 'min_battery_soc_for_heating', 50.0)
+            pv_threshold = 10000  # Keep 10kW as threshold for now
             safety_buffer = 500
-            surplus_after_vehicles = battery_surplus_available - vehicle_power_to_reserve
-            effective_surplus = max(0, surplus_after_vehicles - safety_buffer)
             
-            # Determine priority status
-            priority_status = "heating_allowed"
-            priority_reason = "Normal operation"
+            if state.battery_soc < min_battery_soc and state.pv_power < pv_threshold:
+                # Battery < min_soc AND PV < 10kW: no heating
+                effective_surplus = 0
+                priority_status = "battery_low_pv_low"
+                priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% and PV {state.pv_power/1000:.1f}kW < {pv_threshold/1000:.1f}kW: no heating"
+            elif state.battery_soc > min_battery_soc:
+                # Battery > min_soc: calculate PV - house load
+                effective_surplus = max(0, state.pv_power - state.house_consumption - safety_buffer)
+                priority_status = "heating_allowed"
+                priority_reason = f"Battery > {min_battery_soc}%: PV {state.pv_power/1000:.1f}kW - House {state.house_consumption/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
+            else:
+                # Battery < min_soc but PV >= 10kW: calculate PV - house load - 10kW (reserve 10kW for battery)
+                effective_surplus = max(0, state.pv_power - state.house_consumption - pv_threshold - safety_buffer)
+                priority_status = "battery_low_pv_high"
+                priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% but PV {state.pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW: PV - House - {pv_threshold/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
             
-            if state.battery_soc < 50:
-                priority_status = "battery_priority"
-                priority_reason = f"Battery SoC {state.battery_soc:.1f}% < 50%"
-            elif battery_status == "charging_no_surplus":
-                priority_status = "battery_charging"
-                priority_reason = f"Battery charging, no surplus available"
-            elif vehicle_power_to_reserve > 0:
-                if vehicle_charging_power > 0:
-                    priority_status = "vehicle_priority"
-                    priority_reason = f"Vehicle charging: {vehicle_charging_power/1000:.1f}kW (reserved: {vehicle_power_to_reserve/1000:.1f}kW)"
-                else:
-                    priority_status = "vehicle_connected"
-                    priority_reason = f"Vehicle connected, reserved: {vehicle_power_to_reserve/1000:.1f}kW"
-            elif effective_surplus <= 0:
-                priority_status = "insufficient_surplus"
-                priority_reason = f"Insufficient surplus: {effective_surplus/1000:.1f}kW"
+            # Battery status (for display)
+            if battery_power < 0:  # Battery is charging (negative value in EVCC)
+                battery_status = "charging"
+            elif battery_power > 0:  # Battery is discharging
+                battery_status = "discharging"  
+            else:
+                battery_status = "not_charging"
             
             return {
                 'pv_power': state.pv_power,
                 'battery_soc': state.battery_soc,
                 'battery_power': battery_power,
-                'max_battery_charge_power': max_battery_charge_power,
                 'battery_status': battery_status,
                 'raw_surplus': state.surplus_power,
-                'battery_surplus_available': battery_surplus_available,
                 'vehicle_charging_power': vehicle_charging_power,
                 'vehicle_max_potential': vehicle_max_potential,
-                'vehicle_power_reserved': vehicle_power_to_reserve,
                 'charging_vehicles': charging_vehicles,
                 'connected_vehicles': connected_vehicles,
-                'surplus_after_vehicles': surplus_after_vehicles,
                 'effective_surplus': effective_surplus,
-                'safety_buffer': safety_buffer,
-                'heating_element_power': power_kw * 1000,
+                'heating_element_power': heating_element_power,
                 'priority_status': priority_status,
                 'priority_reason': priority_reason,
-                'max_possible_elements': max(0, int(effective_surplus / (power_kw * 1000)))
+                'safety_buffer': safety_buffer,
+                'min_battery_soc': min_battery_soc,
+                'pv_threshold': pv_threshold,
+                'max_possible_elements': min(3, max(0, int(effective_surplus / heating_element_power)))
             }
             
         except Exception as e:
@@ -1053,112 +1027,50 @@ def control_heating_elements_with_confirmation(evcc_client, hardware, config, lo
                    f"(1/{controller.required_confirmations} confirmations)")
 
 def _calculate_desired_elements(evcc_client, config, logger):
-    """Calculate how many heating elements should be active based on EVCC data with smart EV-aware power allocation"""
+    """Calculate how many heating elements should be active based on updated EVCC logic"""
     state = evcc_client.get_state()
     if not state:
         logger.warning("No EVCC data available")
         return 0
 
-    # Get smart power allocation that considers EV charging needs
-    power_allocation = evcc_client.get_smart_heating_power_allocation()
-    available_for_heating = power_allocation['available_for_heating']
-    
     battery_soc = state.battery_soc
-    battery_power = state.battery_power  # Current battery charging/discharging power
+    pv_power = state.pv_power
+    house_consumption = state.house_consumption
     
-    # Battery configuration
-    max_battery_charge_power = 10000  # 10kW max charging power
+    # Get configuration values
+    min_battery_soc = getattr(config.evcc, 'min_battery_soc_for_heating', 50.0)
+    heating_element_power = getattr(config.evcc, 'heating_element_power', 2000.0)  # Default 2kW per element
+    pv_threshold = 10000  # Keep 10kW threshold for now, could be made configurable
     
-    # Heating element configuration
-    power_kw = 2.0
-    if hasattr(config, 'evcc') and hasattr(config.evcc, 'heating_element_power'):
-        try:
-            power_kw = config.evcc.heating_element_power / 1000.0
-        except Exception:
-            pass
-    
-    power_w = power_kw * 1000
+    safety_buffer = 500  # 500W safety buffer
 
-    # Get loadpoints and vehicles data for priority calculation
-    try:
-        loadpoints = evcc_client.get_loadpoints() or []
-        vehicles = evcc_client.get_vehicles() or []
-    except Exception as e:
-        logger.warning(f"Could not get loadpoints/vehicles data: {e}")
-        loadpoints = []
-        vehicles = []
-
-    # Calculate total vehicle charging power and potential
-    vehicle_charging_power = 0
-    vehicle_max_potential = 0
-    charging_vehicles = []
-    connected_vehicles = []
-    max_vehicle_charge_power = 10000  # 10kW max per vehicle
-    
-    for i, lp in enumerate(loadpoints):
-        vehicle_name = lp.get('vehicle', f'LP{i}')
-        charge_power = lp.get('chargePower', 0)
-        is_charging = lp.get('charging', False)
-        is_connected = lp.get('connected', False)
-        is_enabled = lp.get('enabled', False)
-        
-        if is_charging:
-            # Vehicle is actively charging
-            vehicle_charging_power += charge_power
-            # Calculate remaining charging capacity for this vehicle
-            remaining_capacity = max_vehicle_charge_power - charge_power
-            vehicle_max_potential += charge_power + remaining_capacity  # Full 10kW potential
-            charging_vehicles.append(f"{vehicle_name}:⚡{charge_power/1000:.1f}kW")
-            
-        elif is_connected and is_enabled:
-            # Vehicle is connected but not charging - could start charging anytime
-            # Reserve full charging capacity for connected vehicles
-            vehicle_max_potential += max_vehicle_charge_power
-            connected_vehicles.append(f"{vehicle_name}:🔌Connected")
-        
-        # Note: Disconnected vehicles don't reserve any power
-
-    # Priority 1: Battery < 50% - No heating allowed (battery has absolute priority)
-    if battery_soc < 50:
-        logger.info(f"PRIORITY: Battery SoC {battery_soc:.1f}% < 50% - no heating allowed, all power for battery")
+    # Updated logic implementation using config values
+    if battery_soc < min_battery_soc and pv_power < pv_threshold:
+        # Battery < min_soc AND PV < 10kW: no heating
+        logger.info(f"EVCC: Battery {battery_soc:.1f}% < {min_battery_soc}% and PV {pv_power/1000:.1f}kW < {pv_threshold/1000:.1f}kW - no heating allowed")
         return 0
-
-    # The smart power allocation already considers EV charging needs and battery priorities
-    # Log the allocation details
-    logger.info(f"Smart power allocation: {power_allocation['reasoning']}")
-    
-    # Log EV analysis if available
-    if power_allocation.get('ev_analysis'):
-        for ev in power_allocation['ev_analysis']:
-            logger.info(f"EV {ev['name']}: {ev['reason']}")
-    
-    # Use the available power directly from smart allocation
-    effective_surplus = available_for_heating
-    
-    # Log detailed power calculation using smart allocation data
-    logger.info(f"Power Calculation: PV={power_allocation['pv_power']/1000:.1f}kW, "
-               f"Home={power_allocation['home_power']/1000:.1f}kW, "
-               f"Battery_SoC={battery_soc:.1f}%, Battery_Power={battery_power/1000:.1f}kW, "
-               f"EV_Current={power_allocation['current_ev_charging']/1000:.1f}kW, "
-               f"EV_Reserved={power_allocation['reserved_for_ev']/1000:.1f}kW, "
-               f"Available_for_Heating={effective_surplus/1000:.1f}kW")
-
-    # Determine how many elements based on effective surplus
-    if effective_surplus <= 0:
-        logger.info("No surplus power available for heating after battery and vehicle priority")
-        return 0
-    elif effective_surplus > power_w * 3:
-        logger.info(f"Sufficient surplus for 3 heating elements ({effective_surplus/1000:.1f}kW > {power_w*3/1000:.1f}kW)")
-        return 3
-    elif effective_surplus > power_w * 2:
-        logger.info(f"Sufficient surplus for 2 heating elements ({effective_surplus/1000:.1f}kW > {power_w*2/1000:.1f}kW)")
-        return 2
-    elif effective_surplus > power_w:
-        logger.info(f"Sufficient surplus for 1 heating element ({effective_surplus/1000:.1f}kW > {power_w/1000:.1f}kW)")
-        return 1
+    elif battery_soc > min_battery_soc:
+        # Battery > min_soc: calculate PV - house load
+        effective_surplus = max(0, pv_power - house_consumption - safety_buffer)
+        logger.info(f"EVCC: Battery {battery_soc:.1f}% > {min_battery_soc}% - PV {pv_power/1000:.1f}kW - House {house_consumption/1000:.1f}kW = {effective_surplus/1000:.1f}kW available")
     else:
-        logger.info(f"Insufficient surplus for heating elements ({effective_surplus/1000:.1f}kW < {power_w/1000:.1f}kW)")
+        # Battery < min_soc but PV >= 10kW: calculate PV - house load - 10kW (reserve 10kW for battery)
+        effective_surplus = max(0, pv_power - house_consumption - pv_threshold - safety_buffer)
+        logger.info(f"EVCC: Battery {battery_soc:.1f}% < {min_battery_soc}% but PV {pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW - PV {pv_power/1000:.1f}kW - House {house_consumption/1000:.1f}kW - {pv_threshold/1000:.1f}kW = {effective_surplus/1000:.1f}kW available")
+
+    # Calculate number of elements based on effective surplus and heating element power
+    if effective_surplus <= 0:
+        logger.info("No surplus power available for heating")
         return 0
+    
+    # Calculate how many elements we can power based on available surplus
+    max_elements = int(effective_surplus / heating_element_power)
+    # Limit to maximum of 3 elements
+    desired_elements = min(max_elements, 3)
+    
+    logger.info(f"EVCC: {effective_surplus/1000:.1f}kW surplus / {heating_element_power/1000:.1f}kW per element = {desired_elements} elements")
+    
+    return desired_elements
 
 def _apply_heating_element_changes(desired_count, hardware, config, logger):
     """Apply the confirmed heating element changes"""

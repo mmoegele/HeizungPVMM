@@ -115,7 +115,6 @@ class EVCCConfig:
     min_battery_soc_for_heating: float = 50.0
     max_battery_soc_for_aggressive: float = 80.0
     max_temperature_for_heating: float = 70.0
-    heating_thresholds: List[float] = field(default_factory=lambda: [2000.0, 4000.0, 6000.0])
     min_surplus_duration: int = 120
     heating_element_power: float = 2000.0
     turn_on_hysteresis: float = 200.0
@@ -279,7 +278,6 @@ class HeatingConfig:
             evcc_config.min_battery_soc_for_heating = evcc_data.get('min_battery_soc_for_heating', 50.0)
             evcc_config.max_battery_soc_for_aggressive = evcc_data.get('max_battery_soc_for_aggressive', 80.0)
             evcc_config.max_temperature_for_heating = evcc_data.get('max_temperature_for_heating', 70.0)
-            evcc_config.heating_thresholds = evcc_data.get('heating_thresholds', [2000.0, 4000.0, 6000.0])
             evcc_config.min_surplus_duration = evcc_data.get('min_surplus_duration', 120)
             evcc_config.heating_element_power = evcc_data.get('heating_element_power', 2000.0)
             evcc_config.turn_on_hysteresis = evcc_data.get('turn_on_hysteresis', 200.0)
