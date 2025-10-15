@@ -143,6 +143,32 @@ class EVCCController:
         
         return heizstab_ports
         
+    def _get_current_heating_power(self):
+        """Calculate the current power consumption of active heating elements"""
+        try:
+            current_power = 0
+            heating_element_power = getattr(self.config.evcc, 'heating_element_power', 1700.0)
+            
+            # Get heating element ports
+            heizstab_ports = self._get_heating_element_ports()
+            
+            # Check each heating element
+            for port_config in heizstab_ports:
+                try:
+                    is_active = self.hardware.get_output(port_config['board'], port_config['port'])
+                    if is_active:
+                        current_power += heating_element_power
+                        self.logger.debug(f"Heating element {port_config['description']} is active, adding {heating_element_power}W")
+                except Exception as e:
+                    self.logger.warning(f"Failed to check status of {port_config['description']}: {e}")
+            
+            self.logger.debug(f"Total current heating power: {current_power}W")
+            return current_power
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate current heating power: {e}")
+            return 0
+        
     def stop(self):
         """Stop the EVCC controller thread"""
         self.running = False
@@ -317,6 +343,13 @@ class EVCCController:
             heating_element_power = getattr(self.config.evcc, 'heating_element_power', 2000.0)
             power_kw = heating_element_power / 1000.0
             
+            # Calculate current heating element power consumption
+            current_heating_power = self._get_current_heating_power()
+            
+            # Correct house consumption by subtracting current heating power
+            # to avoid double-counting heating elements in the calculation
+            corrected_house_consumption = state.house_consumption - current_heating_power
+            
             # Updated surplus calculation logic
             min_battery_soc = getattr(self.config.evcc, 'min_battery_soc_for_heating', 50.0)
             pv_threshold = 10000  # Keep 10kW as threshold for now
@@ -328,15 +361,15 @@ class EVCCController:
                 priority_status = "battery_low_pv_low"
                 priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% and PV {state.pv_power/1000:.1f}kW < {pv_threshold/1000:.1f}kW: no heating"
             elif state.battery_soc > min_battery_soc:
-                # Battery > min_soc: calculate PV - house load
-                effective_surplus = max(0, state.pv_power - state.house_consumption - safety_buffer)
+                # Battery > min_soc: calculate PV - corrected house load
+                effective_surplus = max(0, state.pv_power - corrected_house_consumption - safety_buffer)
                 priority_status = "heating_allowed"
-                priority_reason = f"Battery > {min_battery_soc}%: PV {state.pv_power/1000:.1f}kW - House {state.house_consumption/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
+                priority_reason = f"Battery > {min_battery_soc}%: PV {state.pv_power/1000:.1f}kW - House {corrected_house_consumption/1000:.1f}kW (corrected) = {effective_surplus/1000:.1f}kW available"
             else:
-                # Battery < min_soc but PV >= 10kW: calculate PV - house load - 10kW (reserve 10kW for battery)
-                effective_surplus = max(0, state.pv_power - state.house_consumption - pv_threshold - safety_buffer)
+                # Battery < min_soc but PV >= 10kW: calculate PV - corrected house load - 10kW (reserve 10kW for battery)
+                effective_surplus = max(0, state.pv_power - corrected_house_consumption - pv_threshold - safety_buffer)
                 priority_status = "battery_low_pv_high"
-                priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% but PV {state.pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW: PV - House - {pv_threshold/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
+                priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% but PV {state.pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW: PV - House {corrected_house_consumption/1000:.1f}kW - {pv_threshold/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
             
             # Battery status (for display)
             if battery_power < 0:  # Battery is charging (negative value in EVCC)
@@ -352,6 +385,9 @@ class EVCCController:
                 'battery_power': battery_power,
                 'battery_status': battery_status,
                 'raw_surplus': state.surplus_power,
+                'house_consumption': state.house_consumption,
+                'current_heating_power': current_heating_power,
+                'corrected_house_consumption': corrected_house_consumption,
                 'vehicle_charging_power': vehicle_charging_power,
                 'vehicle_max_potential': vehicle_max_potential,
                 'charging_vehicles': charging_vehicles,
@@ -817,33 +853,59 @@ class EVCCClient:
             return None
         
         try:
-            # EVCC API v0.209+ has vehicles directly at root level
-            vehicles_data = status_data.get('vehicles', {})
+            # Get static vehicle configuration
+            vehicles_config = status_data.get('vehicles', {})
+            # Get dynamic data from loadpoints
+            loadpoints = status_data.get('loadpoints', [])
             
-            if vehicles_data:
-                # Convert dict to list format for consistency with API expectations
-                vehicles_list = []
-                for vehicle_id, vehicle_data in vehicles_data.items():
-                    if isinstance(vehicle_data, dict):
-                        # Add the vehicle ID to the data
-                        vehicle_info = vehicle_data.copy()
-                        vehicle_info['id'] = vehicle_id
-                        if 'title' not in vehicle_info:
-                            vehicle_info['title'] = vehicle_id
-                        vehicles_list.append(vehicle_info)
-                
-                self.logger.info(f"EVCC vehicles: {len(vehicles_list)} found")
-                # Log basic info for debugging
-                for vehicle in vehicles_list:
-                    title = vehicle.get('title', 'Unknown')
-                    soc = vehicle.get('soc', 0)
-                    range_km = vehicle.get('range', 0)
-                    self.logger.debug(f"Vehicle: {title}, SoC: {soc}%, Range: {range_km}km")
-                
-                return vehicles_list
-            else:
-                self.logger.info("No vehicles found in status response")
+            if not vehicles_config:
                 return []
+            
+            # Merge static config with dynamic loadpoint data
+            vehicles_list = []
+            for vehicle_id, vehicle_config in vehicles_config.items():
+                if isinstance(vehicle_config, dict):
+                    # Start with static configuration
+                    vehicle_info = vehicle_config.copy()
+                    vehicle_info['id'] = vehicle_id
+                    if 'title' not in vehicle_info:
+                        vehicle_info['title'] = vehicle_id
+                    
+                    # Find corresponding loadpoint data by matching vehicle name/title
+                    vehicle_title = vehicle_info.get('title', vehicle_id)
+                    for loadpoint in loadpoints:
+                        if isinstance(loadpoint, dict):
+                            lp_vehicle_title = loadpoint.get('vehicleTitle', '')
+                            lp_vehicle_name = loadpoint.get('vehicleName', '')
+                            
+                            # Match by title or name
+                            if (lp_vehicle_title == vehicle_title or 
+                                lp_vehicle_name == vehicle_id or 
+                                lp_vehicle_title == vehicle_id):
+                                
+                                # Merge dynamic data from loadpoint
+                                vehicle_info['soc'] = loadpoint.get('vehicleSoc', 0)
+                                vehicle_info['range'] = loadpoint.get('vehicleRange', 0)
+                                vehicle_info['odometer'] = loadpoint.get('vehicleOdometer', 0)
+                                vehicle_info['connected'] = loadpoint.get('connected', False)
+                                vehicle_info['charging'] = loadpoint.get('charging', False)
+                                vehicle_info['chargePower'] = loadpoint.get('chargePower', 0)
+                                
+                                self.logger.debug(f"Merged loadpoint data for vehicle {vehicle_title}: SoC={vehicle_info['soc']}%, Range={vehicle_info['range']}km")
+                                break
+                    
+                    vehicles_list.append(vehicle_info)
+            
+            self.logger.info(f"EVCC vehicles: {len(vehicles_list)} found")
+            # Log basic info for debugging
+            for vehicle in vehicles_list:
+                title = vehicle.get('title', 'Unknown')
+                soc = vehicle.get('soc', 0)
+                range_km = vehicle.get('range', 0)
+                capacity = vehicle.get('capacity', 0)
+                self.logger.debug(f"Vehicle: {title}, SoC: {soc}%, Range: {range_km}km, Capacity: {capacity}kWh")
+            
+            return vehicles_list
                 
         except Exception as e:
             self.logger.error(f"Unexpected error getting EVCC vehicles from cached data: {e}")

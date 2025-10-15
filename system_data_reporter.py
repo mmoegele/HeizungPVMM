@@ -379,10 +379,22 @@ class SystemDataReporter:
                 timeout=(5, 30)  # (connection timeout, read timeout)
             )
             
-            # Check response - accept both 200 (OK) and 201 (Created) as success
-            if response.status_code in [200, 201]:
+            # Check response - accept all 2xx status codes as success
+            # This includes 200 (OK), 201 (Created), 202 (Accepted), 207 (Multi-Status), etc.
+            if 200 <= response.status_code < 300:
                 sensor_count = len(data.get('data', []))
-                self.logger.debug(f"Successfully sent {sensor_count} sensor records to {url} (HTTP {response.status_code})")
+                
+                # For 207 Multi-Status, log additional details if available
+                if response.status_code == 207:
+                    try:
+                        response_data = response.json()
+                        success_count = response_data.get('success_count', 'unknown')
+                        total_count = response_data.get('total_count', sensor_count)
+                        self.logger.info(f"Batch operation completed: {success_count}/{total_count} items processed successfully (HTTP {response.status_code})")
+                    except (ValueError, KeyError):
+                        self.logger.debug(f"Successfully sent {sensor_count} sensor records to {url} (HTTP {response.status_code})")
+                else:
+                    self.logger.debug(f"Successfully sent {sensor_count} sensor records to {url} (HTTP {response.status_code})")
                 return True
             else:
                 error_msg = f"HTTP {response.status_code}: {response.text[:200]}"  # Limit error text
