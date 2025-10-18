@@ -20,7 +20,7 @@ temperature:
 
 # Buffer Loading Configuration
 buffer_load:
-  min_temperature_difference: 5.0  # Minimum temperature difference to start transfer (°C)
+  min_temperature_difference: 3.0  # Minimum temperature difference to start transfer (°C)
   hysteresis: 1.0                 # Hysteresis to prevent rapid cycling (°C)
   min_run_time: 60                # Minimum time pump runs once started (seconds)
   min_off_time: 120               # Minimum time pump stays off between runs (seconds)

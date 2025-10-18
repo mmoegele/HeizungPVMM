@@ -13,6 +13,7 @@ Dieses Projekt implementiert eine moderne Heizungssteuerung mit EVCC-Integration
 - Steuert die PiFace-Digital-Hardware
 - Verwaltet digitale Ein- und Ausgänge
 - Implementiert Sicherheitsfunktionen für Hardware-Zugriffe
+- **Automatische Board-Reinitialisierung**: Alle 6 Stunden werden die PiFace-Boards automatisch reinitialisiert, um SPI-Kommunikationsprobleme zu vermeiden
 
 ### 3. Sensor-Management (`sensors.py`)
 - Verwaltet Temperatursensoren
@@ -136,6 +137,11 @@ Die Hauptkonfiguration erfolgt in `heating_config.yaml`. Wichtige Einstellungen 
 2. Sensor-Fehler
    - Überprüfen Sie die Sensor-Verkabelung
    - Validieren Sie die Sensor-IDs in der Konfiguration
+
+3. PiFace/SPI-Kommunikationsprobleme
+   - Das System reinitialisiert automatisch alle 6 Stunden die PiFace-Boards
+   - Bei anhaltenden Problemen kann eine manuelle Reinitialisierung durchgeführt werden
+   - Überprüfen Sie SPI-Einstellungen: `sudo raspi-config` → Interface Options → SPI
 
 ## Wartung
 

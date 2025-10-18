@@ -158,19 +158,61 @@ class BufferLoadController:
             temp_difference = konrad_temp - michael_temp
             should_pump_run = temp_difference > self.min_temp_difference
             
+            self.logger.info(f"Buffer control decision: Diff={temp_difference:.1f}°C, Min={self.min_temp_difference}°C, Should run={should_pump_run}, Currently active={self.state.pump_active}")
+            
             if should_pump_run and not self.state.pump_active:
                 # Turn pump ON
-                self.hardware.set_output(self.pump_port, True)
-                self.state.pump_active = True
-                self.state.last_action = "start"
-                self.logger.info(f"Buffer pump ON: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C > {self.min_temp_difference}°C")
+                try:
+                    self.logger.info(f"Attempting to turn ON pump at port '{self.pump_port}'...")
+                    
+                    # Check hardware health before attempting control
+                    if hasattr(self.hardware, 'boards') and hasattr(self.hardware, 'port_mapping'):
+                        if self.pump_port in self.hardware.port_mapping:
+                            board, port = self.hardware.port_mapping[self.pump_port]
+                            self.logger.info(f"Pump port '{self.pump_port}' maps to board {board}, port {port}")
+                            
+                            # Check if board is available
+                            if hasattr(self.hardware, 'boards') and board < len(self.hardware.boards):
+                                board_status = self.hardware.boards[board] is not None
+                                self.logger.info(f"PiFace board {board} status: {'Available' if board_status else 'NOT AVAILABLE'}")
+                                if not board_status:
+                                    self.state.error_message = f"PiFace board {board} not available - SPI/hardware issue"
+                                    self.logger.error(f"Cannot control pump: PiFace board {board} is not available (SPI issue?)")
+                                    return
+                            else:
+                                self.logger.warning(f"Board {board} index out of range or boards not initialized")
+                        else:
+                            self.logger.error(f"Pump port '{self.pump_port}' not found in port mapping")
+                            self.state.error_message = f"Port '{self.pump_port}' not mapped"
+                            return
+                    
+                    result = self.hardware.set_output(self.pump_port, True)
+                    if result:
+                        self.state.pump_active = True
+                        self.state.last_action = "start"
+                        self.logger.info(f"✅ Buffer pump ON: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C > {self.min_temp_difference}°C")
+                    else:
+                        self.logger.error(f"❌ Hardware command failed to turn ON pump (returned False)")
+                        self.state.error_message = "Hardware command failed (PiFace not responding?)"
+                except Exception as e:
+                    self.logger.error(f"❌ Exception turning ON buffer pump: {e}")
+                    self.state.error_message = f"Exception turning ON pump: {e}"
                 
             elif not should_pump_run and self.state.pump_active:
                 # Turn pump OFF
-                self.hardware.set_output(self.pump_port, False)
-                self.state.pump_active = False
-                self.state.last_action = "stop"
-                self.logger.info(f"Buffer pump OFF: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C <= {self.min_temp_difference}°C")
+                try:
+                    self.logger.info(f"Attempting to turn OFF pump at port '{self.pump_port}'...")
+                    result = self.hardware.set_output(self.pump_port, False)
+                    if result:
+                        self.state.pump_active = False
+                        self.state.last_action = "stop"
+                        self.logger.info(f"✅ Buffer pump OFF: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C <= {self.min_temp_difference}°C")
+                    else:
+                        self.logger.error(f"❌ Hardware command failed to turn OFF pump (returned False)")
+                        self.state.error_message = "Hardware command failed (PiFace not responding?)"
+                except Exception as e:
+                    self.logger.error(f"❌ Exception turning OFF buffer pump: {e}")
+                    self.state.error_message = f"Exception turning OFF pump: {e}"
             
             # Log status every check (even if no change)
             status = "ON" if self.state.pump_active else "OFF"
@@ -183,6 +225,20 @@ class BufferLoadController:
     def get_state(self) -> Dict:
         """Get current controller state"""
         temp_difference = self.state.konrad_temp - self.state.michael_temp
+        
+        # Add hardware diagnostics
+        hardware_status = "unknown"
+        if hasattr(self.hardware, 'boards') and hasattr(self.hardware, 'port_mapping'):
+            if self.pump_port in self.hardware.port_mapping:
+                board, port = self.hardware.port_mapping[self.pump_port]
+                if hasattr(self.hardware, 'boards') and board < len(self.hardware.boards):
+                    board_available = self.hardware.boards[board] is not None
+                    hardware_status = f"Board {board}: {'OK' if board_available else 'FAILED'}"
+                else:
+                    hardware_status = f"Board {board}: OUT_OF_RANGE"
+            else:
+                hardware_status = f"Port '{self.pump_port}': NOT_MAPPED"
+        
         return {
             "konrad_temp": self.state.konrad_temp,
             "michael_temp": self.state.michael_temp,
@@ -195,7 +251,8 @@ class BufferLoadController:
             "running": self.running,
             "konrad_sensor": self.konrad_sensor,
             "michael_sensor": self.michael_sensor,
-            "pump_port": self.pump_port
+            "pump_port": self.pump_port,
+            "hardware_status": hardware_status
         }
     
     def update(self) -> bool:

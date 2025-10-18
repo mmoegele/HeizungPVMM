@@ -157,6 +157,13 @@ class PiFaceController(HeatingHardware):
         self.board_count = board_count
         self.mock_mode = mock_mode
         
+        # Periodic reinitialization tracking
+        import time
+        import threading
+        self.last_init_time = time.time()
+        self.reinit_interval = 6 * 60 * 60  # 6 hours in seconds
+        self.reinit_lock = threading.Lock()
+        
         if mock_mode:
             self.mock_controller = MockHardwareController(board_count, logger)
         else:
@@ -224,9 +231,57 @@ class PiFaceController(HeatingHardware):
             # Initialize empty boards list so system can continue
             self.boards = [None] * self.board_count
     
+    def _check_and_reinitialize_if_needed(self):
+        """Check if boards need reinitialization and do it if necessary"""
+        if self.mock_mode:
+            return
+        
+        import time
+        current_time = time.time()
+        
+        # Check if 6 hours have passed since last initialization
+        if current_time - self.last_init_time >= self.reinit_interval:
+            with self.reinit_lock:
+                # Double-check after acquiring lock
+                if current_time - self.last_init_time >= self.reinit_interval:
+                    self.logger.info("🔄 6 hours passed - reinitializing PiFace boards for stability...")
+                    
+                    # Dispose of current boards safely
+                    try:
+                        if hasattr(self, 'boards'):
+                            for i, board in enumerate(self.boards):
+                                if board is not None:
+                                    try:
+                                        # Turn off all outputs before disposal
+                                        for port in range(8):
+                                            board.output_pins[port].turn_off()
+                                    except Exception as e:
+                                        self.logger.warning(f"Error turning off outputs on board {i} during reinit: {e}")
+                    except Exception as e:
+                        self.logger.warning(f"Error during board cleanup: {e}")
+                    
+                    # Reinitialize boards
+                    self._initialize_boards()
+                    self.last_init_time = current_time
+                    self.logger.info("✅ PiFace boards reinitialized successfully")
+    
+    def force_reinitialize(self):
+        """Force immediate reinitialization of PiFace boards"""
+        if self.mock_mode:
+            self.logger.info("Mock mode - skipping board reinitialization")
+            return
+        
+        with self.reinit_lock:
+            self.logger.info("🔄 Manual reinitialization of PiFace boards requested...")
+            self.last_init_time = 0  # Reset timer
+            self._check_and_reinitialize_if_needed()
+
     def turn_on(self, board: int, port: int) -> bool:
         if self.mock_mode:
             return self.mock_controller.turn_on(board, port)
+        
+        # Check if boards need reinitialization
+        self._check_and_reinitialize_if_needed()
         
         try:
             if board < len(self.boards) and self.boards[board] is not None:
@@ -238,11 +293,16 @@ class PiFaceController(HeatingHardware):
                 return False
         except Exception as e:
             self.logger.error(f"Failed to turn on board {board}, port {port}: {e}")
+            # If command fails, try reinitialization on next call
+            self.last_init_time = 0  # Force reinit on next call
         return False
     
     def turn_off(self, board: int, port: int) -> bool:
         if self.mock_mode:
             return self.mock_controller.turn_off(board, port)
+        
+        # Check if boards need reinitialization
+        self._check_and_reinitialize_if_needed()
         
         try:
             if board < len(self.boards) and self.boards[board] is not None:
@@ -254,6 +314,8 @@ class PiFaceController(HeatingHardware):
                 return False
         except Exception as e:
             self.logger.error(f"Failed to turn off board {board}, port {port}: {e}")
+            # If command fails, try reinitialization on next call
+            self.last_init_time = 0  # Force reinit on next call
         return False
     
     def read_input(self, board: int, port: int) -> bool:
