@@ -111,24 +111,38 @@ class BufferLoadController:
             # Get all temperature readings (like System Data Reporter does)
             all_temps = self.sensor_manager.read_all_temperatures()
             
+            # Enhanced debug logging for sensor diagnostics
+            self.logger.info(f"Buffer controller sensor debug:")
+            self.logger.info(f"  Total sensors available: {len(all_temps)}")
+            self.logger.info(f"  Looking for: {self.konrad_sensor}, {self.michael_sensor}")
+            
+            # Debug: Show all available sensors
+            available_sensors = list(all_temps.keys())
+            self.logger.info(f"  Available sensors: {available_sensors}")
+            
             # Extract valid temperatures manually
             konrad_temp = None
             michael_temp = None
             
             if self.konrad_sensor in all_temps:
                 reading = all_temps[self.konrad_sensor]
+                self.logger.info(f"  {self.konrad_sensor}: exists={True}, is_valid={reading.is_valid}, value={reading.value}, error={reading.error_message}")
                 if reading.is_valid and reading.error_message is None:
                     konrad_temp = reading.value
                 else:
                     self.logger.debug(f"Konrad sensor {self.konrad_sensor}: valid={reading.is_valid}, error={reading.error_message}")
+            else:
+                self.logger.warning(f"  {self.konrad_sensor}: NOT FOUND in sensor manager")
             
             if self.michael_sensor in all_temps:
                 reading = all_temps[self.michael_sensor]
+                self.logger.info(f"  {self.michael_sensor}: exists={True}, is_valid={reading.is_valid}, value={reading.value}, error={reading.error_message}")
                 if reading.is_valid and reading.error_message is None:
                     michael_temp = reading.value
                 else:
                     self.logger.debug(f"Michael sensor {self.michael_sensor}: valid={reading.is_valid}, error={reading.error_message}")
-            
+            else:
+                self.logger.warning(f"  {self.michael_sensor}: NOT FOUND in sensor manager")
             # Debug logging
             self.logger.debug(f"Temperature readings: {self.konrad_sensor}={konrad_temp}°C, {self.michael_sensor}={michael_temp}°C")
             
@@ -190,7 +204,13 @@ class BufferLoadController:
                     if result:
                         self.state.pump_active = True
                         self.state.last_action = "start"
-                        self.logger.info(f"✅ Buffer pump ON: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C > {self.min_temp_difference}°C")
+                        # Verify the hardware actually set the output
+                        actual_state = self._verify_hardware_state()
+                        if actual_state is not None and not actual_state:
+                            self.logger.error(f"❌ Hardware verification FAILED: pump command sent but actual state is OFF")
+                            self.state.error_message = "Hardware verification failed - output not set"
+                        else:
+                            self.logger.info(f"✅ Buffer pump ON: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C > {self.min_temp_difference}°C (verified: {actual_state})")
                     else:
                         self.logger.error(f"❌ Hardware command failed to turn ON pump (returned False)")
                         self.state.error_message = "Hardware command failed (PiFace not responding?)"
@@ -206,7 +226,13 @@ class BufferLoadController:
                     if result:
                         self.state.pump_active = False
                         self.state.last_action = "stop"
-                        self.logger.info(f"✅ Buffer pump OFF: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C <= {self.min_temp_difference}°C")
+                        # Verify the hardware actually set the output
+                        actual_state = self._verify_hardware_state()
+                        if actual_state is not None and actual_state:
+                            self.logger.error(f"❌ Hardware verification FAILED: pump stop command sent but actual state is ON")
+                            self.state.error_message = "Hardware verification failed - output not cleared"
+                        else:
+                            self.logger.info(f"✅ Buffer pump OFF: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C <= {self.min_temp_difference}°C (verified: {actual_state})")
                     else:
                         self.logger.error(f"❌ Hardware command failed to turn OFF pump (returned False)")
                         self.state.error_message = "Hardware command failed (PiFace not responding?)"
@@ -222,18 +248,46 @@ class BufferLoadController:
             self.logger.error(f"Error in temperature check: {e}")
             self.state.error_message = f"Control error: {e}"
     
+    def _verify_hardware_state(self) -> Optional[bool]:
+        """Verify the actual hardware state by reading back the output"""
+        try:
+            if hasattr(self.hardware, 'port_mapping') and self.pump_port in self.hardware.port_mapping:
+                board, port = self.hardware.port_mapping[self.pump_port]
+                if hasattr(self.hardware, 'get_output'):
+                    actual_state = self.hardware.get_output(board, port)
+                    self.logger.debug(f"Hardware state verification: Board {board}, Port {port} = {actual_state}")
+                    return actual_state
+                else:
+                    self.logger.debug("Hardware controller does not support get_output method")
+                    return None
+            else:
+                self.logger.debug(f"Cannot verify hardware state - port '{self.pump_port}' not mapped")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error verifying hardware state: {e}")
+            return None
+    
     def get_state(self) -> Dict:
         """Get current controller state"""
         temp_difference = self.state.konrad_temp - self.state.michael_temp
         
         # Add hardware diagnostics
         hardware_status = "unknown"
+        actual_pump_state = None
+        
         if hasattr(self.hardware, 'boards') and hasattr(self.hardware, 'port_mapping'):
             if self.pump_port in self.hardware.port_mapping:
                 board, port = self.hardware.port_mapping[self.pump_port]
                 if hasattr(self.hardware, 'boards') and board < len(self.hardware.boards):
                     board_available = self.hardware.boards[board] is not None
                     hardware_status = f"Board {board}: {'OK' if board_available else 'FAILED'}"
+                    
+                    # Try to read actual pump state
+                    if board_available:
+                        try:
+                            actual_pump_state = self.hardware.get_output(board, port)
+                        except Exception as e:
+                            hardware_status += f" (read error: {e})"
                 else:
                     hardware_status = f"Board {board}: OUT_OF_RANGE"
             else:
@@ -245,6 +299,8 @@ class BufferLoadController:
             "temp_difference": temp_difference,
             "min_temp_difference": self.min_temp_difference,
             "pump_active": self.state.pump_active,
+            "actual_pump_state": actual_pump_state,  # NEW: actual hardware state
+            "pump_state_mismatch": actual_pump_state is not None and actual_pump_state != self.state.pump_active,  # NEW: detect mismatch
             "last_action": self.state.last_action,
             "last_check_time": self.state.last_check_time.isoformat() if self.state.last_check_time else None,
             "error_message": self.state.error_message,
@@ -258,6 +314,75 @@ class BufferLoadController:
     def update(self) -> bool:
         """Compatibility method - not used in threaded version"""
         return True
+    
+    def test_pump_manual(self, state: bool) -> Dict:
+        """Manual pump test for debugging - returns detailed results"""
+        try:
+            self.logger.info(f"🔧 Manual pump test: Setting pump to {'ON' if state else 'OFF'}")
+            
+            # Get hardware mapping info
+            if hasattr(self.hardware, 'port_mapping') and self.pump_port in self.hardware.port_mapping:
+                board, port = self.hardware.port_mapping[self.pump_port]
+                self.logger.info(f"🔧 Pump port '{self.pump_port}' maps to board {board}, port {port}")
+                
+                # Check board availability
+                if hasattr(self.hardware, 'boards') and board < len(self.hardware.boards):
+                    board_available = self.hardware.boards[board] is not None
+                    self.logger.info(f"🔧 Board {board} status: {'Available' if board_available else 'NOT AVAILABLE'}")
+                    
+                    if not board_available:
+                        return {
+                            "success": False,
+                            "error": f"PiFace board {board} not available",
+                            "board": board,
+                            "port": port,
+                            "requested_state": state,
+                            "actual_state": None
+                        }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Board {board} out of range",
+                        "board": board,
+                        "port": port,
+                        "requested_state": state,
+                        "actual_state": None
+                    }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Port '{self.pump_port}' not found in port mapping",
+                    "requested_state": state,
+                    "actual_state": None
+                }
+            
+            # Execute command
+            result = self.hardware.set_output(self.pump_port, state)
+            self.logger.info(f"🔧 Hardware command result: {result}")
+            
+            # Verify result
+            time.sleep(0.1)  # Small delay for hardware to settle
+            actual_state = self._verify_hardware_state()
+            self.logger.info(f"🔧 Actual hardware state after command: {actual_state}")
+            
+            return {
+                "success": result,
+                "board": board,
+                "port": port,
+                "requested_state": state,
+                "actual_state": actual_state,
+                "state_matches": actual_state == state if actual_state is not None else None,
+                "error": None if result else "Hardware command returned False"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"🔧 Manual pump test failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "requested_state": state,
+                "actual_state": None
+            }
     
     def dispose(self):
         """Clean up and shut down"""

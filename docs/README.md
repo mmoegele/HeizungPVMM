@@ -21,9 +21,10 @@ Dieses Projekt implementiert eine moderne Heizungssteuerung mit EVCC-Integration
 - Unterstützt One-Wire-Sensoren
 
 ### 4. Logging-System (`logging_system.py`)
-- Implementiert umfangreiches Logging
+- Implementiert umfangreiches Logging direkt an systemd journal
+- Verwendet nur stdout/stderr für optimale systemd-Integration
 - Unterstützt verschiedene Log-Level
-- Speichert Logs in konfigurierbaren Dateien
+- Keine separaten Log-Dateien - alles über `journalctl` verfügbar
 
 ### 5. GPIO-Fixes (`gpio.py`)
 - Stellt GPIO-Kompatibilität sicher
@@ -111,6 +112,42 @@ Die Hauptkonfiguration erfolgt in `heating_config.yaml`. Wichtige Einstellungen 
 - Temperaturgrenzen für sicheren Betrieb
 - Notabschaltung bei kritischen Zuständen
 - Ressourcenüberwachung
+
+## Log-Zugriff
+
+Das System verwendet ausschließlich systemd journal für alle Logs. 
+
+### Systemd Journal Befehle:
+```bash
+# Service Status prüfen
+sudo systemctl status heating-control
+
+# Live Logs anzeigen
+sudo journalctl -u heating-control -f
+
+# Letzte 100 Zeilen
+sudo journalctl -u heating-control -n 100
+
+# Logs von heute
+sudo journalctl -u heating-control --since today
+
+# Fehler suchen
+sudo journalctl -u heating-control | grep -E "(ERROR|WARNING|CRITICAL)"
+
+# Buffer Controller Logs
+sudo journalctl -u heating-control | grep -i "buffer\|pump"
+
+# PiFace/Hardware Logs  
+sudo journalctl -u heating-control | grep -i "piface\|spi\|board"
+```
+
+### Web-API Zugriff:
+```bash
+# Logs über HTTP API abrufen
+curl http://192.168.191.206:8080/api/system/logs
+```
+
+Die API liest automatisch aus dem systemd journal und liefert gefilterte System-Logs zurück.
 
 ## Fehlerbehebung
 

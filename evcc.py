@@ -303,8 +303,20 @@ class EVCCController:
             max_battery_charge_power = 10000  # 10kW max charging power (could be made configurable)
             battery_power = state.battery_power
             
-            # Get loadpoints for vehicle charging calculation
-            loadpoints = self.evcc_client.get_loadpoints() or []
+            # Get loadpoints for vehicle charging calculation - only consider Garage2
+            all_loadpoints = self.evcc_client.get_loadpoints() or []
+            loadpoints = [lp for lp in all_loadpoints if lp.get('title') == 'Garage2']
+            
+            # Debug logging to show what we found
+            self.logger.info(f"EVCC Controller - Found {len(all_loadpoints)} total loadpoints")
+            for i, lp in enumerate(all_loadpoints):
+                title = lp.get('title', f'LP{i}')
+                connected = lp.get('connected', False)
+                charging = lp.get('charging', False)
+                vehicle = lp.get('vehicleTitle', 'No vehicle')
+                self.logger.info(f"  Loadpoint {i}: {title} - Vehicle: {vehicle}, Connected: {connected}, Charging: {charging}")
+            
+            self.logger.info(f"EVCC Controller - Filtering for Garage2 only: {len(loadpoints)} loadpoints selected")
             
             # Calculate vehicle charging power and potential
             vehicle_charging_power = 0
@@ -318,7 +330,6 @@ class EVCCController:
                 charge_power = lp.get('chargePower', 0)
                 is_charging = lp.get('charging', False)
                 is_connected = lp.get('connected', False)
-                is_enabled = lp.get('enabled', False)
                 
                 if is_charging:
                     # Vehicle is actively charging
@@ -330,8 +341,8 @@ class EVCCController:
                         'status': 'charging',
                         'max_power': max_vehicle_charge_power
                     })
-                elif is_connected and is_enabled:
-                    # Vehicle is connected but not charging - reserve full capacity
+                elif is_connected:
+                    # Vehicle is connected - reserve full capacity (only check connected status)
                     vehicle_max_potential += max_vehicle_charge_power
                     connected_vehicles.append({
                         'name': vehicle_name,
@@ -350,26 +361,45 @@ class EVCCController:
             # to avoid double-counting heating elements in the calculation
             corrected_house_consumption = state.house_consumption - current_heating_power
             
-            # Updated surplus calculation logic
+            # Updated surplus calculation logic with dynamic vehicle reservation
             min_battery_soc = getattr(self.config.evcc, 'min_battery_soc_for_heating', 50.0)
             pv_threshold = 10000  # Keep 10kW as threshold for now
             safety_buffer = 500
+            
+            # Dynamic vehicle reservation: only reserve 10kW if vehicle is connected
+            vehicle_reservation = 0
+            if connected_vehicles or charging_vehicles:
+                vehicle_reservation = 10000  # Reserve 10kW when any vehicle is connected
+                vehicle_status = f"Vehicle connected - reserving {vehicle_reservation/1000:.1f}kW"
+                connected_details = [f"{v['name']}({v['status']})" for v in connected_vehicles]
+                charging_details = [f"{v['name']}({v['status']})" for v in charging_vehicles]
+                all_vehicles = connected_details + charging_details
+                self.logger.info(f"EVCC Controller - Vehicle reservation active: {', '.join(all_vehicles)}")
+            else:
+                vehicle_status = "No vehicles connected - no reservation"
+                self.logger.info(f"EVCC Controller - No vehicle reservation: connected={len(connected_vehicles)}, charging={len(charging_vehicles)}")
             
             if state.battery_soc < min_battery_soc and state.pv_power < pv_threshold:
                 # Battery < min_soc AND PV < 10kW: no heating
                 effective_surplus = 0
                 priority_status = "battery_low_pv_low"
-                priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% and PV {state.pv_power/1000:.1f}kW < {pv_threshold/1000:.1f}kW: no heating"
+                priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% and PV {state.pv_power/1000:.1f}kW < {pv_threshold/1000:.1f}kW: no heating. {vehicle_status}"
             elif state.battery_soc > min_battery_soc:
-                # Battery > min_soc: calculate PV - corrected house load
-                effective_surplus = max(0, state.pv_power - corrected_house_consumption - safety_buffer)
+                # Battery > min_soc: calculate PV - corrected house load - dynamic vehicle reservation
+                effective_surplus = max(0, state.pv_power - corrected_house_consumption - vehicle_reservation - safety_buffer)
                 priority_status = "heating_allowed"
-                priority_reason = f"Battery > {min_battery_soc}%: PV {state.pv_power/1000:.1f}kW - House {corrected_house_consumption/1000:.1f}kW (corrected) = {effective_surplus/1000:.1f}kW available"
+                if vehicle_reservation > 0:
+                    priority_reason = f"Battery > {min_battery_soc}%: PV {state.pv_power/1000:.1f}kW - House {corrected_house_consumption/1000:.1f}kW - Vehicle {vehicle_reservation/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
+                else:
+                    priority_reason = f"Battery > {min_battery_soc}%: PV {state.pv_power/1000:.1f}kW - House {corrected_house_consumption/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
             else:
-                # Battery < min_soc but PV >= 10kW: calculate PV - corrected house load - 10kW (reserve 10kW for battery)
-                effective_surplus = max(0, state.pv_power - corrected_house_consumption - pv_threshold - safety_buffer)
+                # Battery < min_soc but PV >= 10kW: calculate PV - corrected house load - 10kW (battery) - dynamic vehicle reservation
+                effective_surplus = max(0, state.pv_power - corrected_house_consumption - pv_threshold - vehicle_reservation - safety_buffer)
                 priority_status = "battery_low_pv_high"
-                priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% but PV {state.pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW: PV - House {corrected_house_consumption/1000:.1f}kW - {pv_threshold/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
+                if vehicle_reservation > 0:
+                    priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% but PV {state.pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW: PV - House {corrected_house_consumption/1000:.1f}kW - Battery {pv_threshold/1000:.1f}kW - Vehicle {vehicle_reservation/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
+                else:
+                    priority_reason = f"Battery {state.battery_soc:.1f}% < {min_battery_soc}% but PV {state.pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW: PV - House {corrected_house_consumption/1000:.1f}kW - Battery {pv_threshold/1000:.1f}kW = {effective_surplus/1000:.1f}kW available"
             
             # Battery status (for display)
             if battery_power < 0:  # Battery is charging (negative value in EVCC)
@@ -390,6 +420,8 @@ class EVCCController:
                 'corrected_house_consumption': corrected_house_consumption,
                 'vehicle_charging_power': vehicle_charging_power,
                 'vehicle_max_potential': vehicle_max_potential,
+                'vehicle_reservation': vehicle_reservation,
+                'vehicle_status': vehicle_status,
                 'charging_vehicles': charging_vehicles,
                 'connected_vehicles': connected_vehicles,
                 'effective_surplus': effective_surplus,
@@ -855,56 +887,64 @@ class EVCCClient:
         try:
             # Get static vehicle configuration
             vehicles_config = status_data.get('vehicles', {})
-            # Get dynamic data from loadpoints
-            loadpoints = status_data.get('loadpoints', [])
+            # Get dynamic data from loadpoints - only consider Garage2
+            all_loadpoints = status_data.get('loadpoints', [])
+            loadpoints = [lp for lp in all_loadpoints if lp.get('title') == 'Garage2']
             
-            if not vehicles_config:
-                return []
-            
-            # Merge static config with dynamic loadpoint data
+            # Collect vehicles from Garage2 loadpoint only, using original loadpoint index as unique identifier
             vehicles_list = []
-            for vehicle_id, vehicle_config in vehicles_config.items():
-                if isinstance(vehicle_config, dict):
-                    # Start with static configuration
-                    vehicle_info = vehicle_config.copy()
-                    vehicle_info['id'] = vehicle_id
-                    if 'title' not in vehicle_info:
-                        vehicle_info['title'] = vehicle_id
+            loadpoint_vehicles = {}
+            
+            # First, collect all vehicles from Garage2 loadpoint with their actual data
+            for lp_index, loadpoint in enumerate(all_loadpoints):
+                # Only process Garage2 loadpoint
+                if loadpoint.get('title') != 'Garage2':
+                    continue
                     
-                    # Find corresponding loadpoint data by matching vehicle name/title
-                    vehicle_title = vehicle_info.get('title', vehicle_id)
-                    for loadpoint in loadpoints:
-                        if isinstance(loadpoint, dict):
-                            lp_vehicle_title = loadpoint.get('vehicleTitle', '')
-                            lp_vehicle_name = loadpoint.get('vehicleName', '')
-                            
-                            # Match by title or name
-                            if (lp_vehicle_title == vehicle_title or 
-                                lp_vehicle_name == vehicle_id or 
-                                lp_vehicle_title == vehicle_id):
-                                
-                                # Merge dynamic data from loadpoint
-                                vehicle_info['soc'] = loadpoint.get('vehicleSoc', 0)
-                                vehicle_info['range'] = loadpoint.get('vehicleRange', 0)
-                                vehicle_info['odometer'] = loadpoint.get('vehicleOdometer', 0)
-                                vehicle_info['connected'] = loadpoint.get('connected', False)
-                                vehicle_info['charging'] = loadpoint.get('charging', False)
-                                vehicle_info['chargePower'] = loadpoint.get('chargePower', 0)
-                                
-                                self.logger.debug(f"Merged loadpoint data for vehicle {vehicle_title}: SoC={vehicle_info['soc']}%, Range={vehicle_info['range']}km")
+                if isinstance(loadpoint, dict):
+                    vehicle_title = loadpoint.get('vehicleTitle', '')
+                    vehicle_name = loadpoint.get('vehicleName', '')
+                    
+                    if vehicle_title or vehicle_name:
+                        # Create unique key using loadpoint index and vehicle name
+                        vehicle_key = f"lp{lp_index}_{vehicle_name or vehicle_title}"
+                        
+                        # Get static config for this vehicle if available
+                        static_config = {}
+                        for config_id, config_data in vehicles_config.items():
+                            if (config_data.get('title') == vehicle_title or 
+                                config_id == vehicle_name):
+                                static_config = config_data.copy()
                                 break
-                    
-                    vehicles_list.append(vehicle_info)
+                        
+                        # Merge static config with dynamic loadpoint data
+                        vehicle_info = static_config.copy()
+                        vehicle_info.update({
+                            'id': vehicle_key,
+                            'title': vehicle_title or vehicle_name,
+                            'name': vehicle_name,
+                            'loadpoint': lp_index,
+                            'loadpoint_title': loadpoint.get('title', f'Loadpoint {lp_index + 1}'),
+                            'soc': loadpoint.get('vehicleSoc', 0),
+                            'range': loadpoint.get('vehicleRange', 0),
+                            'odometer': loadpoint.get('vehicleOdometer', 0),
+                            'connected': loadpoint.get('connected', False),
+                            'charging': loadpoint.get('charging', False),
+                            'chargePower': loadpoint.get('chargePower', 0),
+                            'enabled': loadpoint.get('enabled', False)
+                        })
+                        
+                        # Only add vehicles that have meaningful data (connected or has valid SoC)
+                        if (vehicle_info['connected'] or 
+                            vehicle_info['soc'] > 0 or 
+                            vehicle_info['range'] > 0):
+                            vehicles_list.append(vehicle_info)
+                            
+                            self.logger.debug(f"Found vehicle {vehicle_title} on loadpoint {lp_index}: "
+                                            f"SoC={vehicle_info['soc']}%, Range={vehicle_info['range']}km, "
+                                            f"Connected={vehicle_info['connected']}, Charging={vehicle_info['charging']}")
             
-            self.logger.info(f"EVCC vehicles: {len(vehicles_list)} found")
-            # Log basic info for debugging
-            for vehicle in vehicles_list:
-                title = vehicle.get('title', 'Unknown')
-                soc = vehicle.get('soc', 0)
-                range_km = vehicle.get('range', 0)
-                capacity = vehicle.get('capacity', 0)
-                self.logger.debug(f"Vehicle: {title}, SoC: {soc}%, Range: {range_km}km, Capacity: {capacity}kWh")
-            
+            self.logger.info(f"EVCC vehicles: {len(vehicles_list)} found from Garage2 loadpoint")
             return vehicles_list
                 
         except Exception as e:

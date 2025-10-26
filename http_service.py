@@ -221,6 +221,26 @@ class HTTPService:
             except Exception as e:
                 self.logger.error(f"Error setting output {board}-{pin}: {e}")
                 return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/buffer/test_pump', methods=['POST'])
+        @self._require_auth
+        def test_buffer_pump():
+            """Test buffer pump manually for debugging"""
+            if not hasattr(self.heating_system, 'buffer_load_controller') or not self.heating_system.buffer_load_controller:
+                return jsonify({'error': 'Buffer load controller not available'}), 503
+            
+            data = request.get_json()
+            if not isinstance(data, dict) or 'state' not in data:
+                return jsonify({'error': 'Missing state parameter (true/false)'}), 400
+            
+            state = bool(data['state'])
+            
+            try:
+                test_result = self.heating_system.buffer_load_controller.test_pump_manual(state)
+                return jsonify(test_result)
+            except Exception as e:
+                self.logger.error(f"Error testing buffer pump: {e}")
+                return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/temperatures')
         @self._require_auth
@@ -295,7 +315,7 @@ class HTTPService:
                         he_state = self.heating_system.heat_exchanger.get_state()
                         controllers['heat_exchanger'] = {
                             'name': 'Heat Exchanger',
-                            'is_pump_active': he_state.get('pump_active', False),
+                            'pump_active': he_state.get('pump_active', False),
                             'bhkw_active': he_state.get('bhkw_active', False),
                             'last_temperature': he_state.get('current_temp'),
                             'target_temperature': he_state.get('target_temp'),
@@ -355,15 +375,21 @@ class HTTPService:
                         bl_state = self.heating_system.buffer_load_controller.get_state()
                         controllers['buffer_load_controller'] = {
                             'name': 'Buffer Load Controller',
-                            'is_pump_active': bl_state.get('pump_active', False),
-                            'source_sensor': bl_state.get('konrad_sensor', 'N/A'),
-                            'target_sensor': bl_state.get('michael_sensor', 'N/A'), 
-                            'source_temp': bl_state.get('konrad_temp'),
-                            'target_temp': bl_state.get('michael_temp'),
+                            'pump_active': bl_state.get('pump_active', False),
+                            'actual_pump_state': bl_state.get('actual_pump_state'),
+                            'pump_state_mismatch': bl_state.get('pump_state_mismatch', False),
+                            'konrad_sensor': bl_state.get('konrad_sensor', 'N/A'),
+                            'michael_sensor': bl_state.get('michael_sensor', 'N/A'), 
+                            'konrad_temp': bl_state.get('konrad_temp'),
+                            'michael_temp': bl_state.get('michael_temp'),
+                            'temp_difference': bl_state.get('temp_difference'),
+                            'min_temp_difference': bl_state.get('min_temp_difference'),
+                            'pump_port': bl_state.get('pump_port'),
+                            'hardware_status': bl_state.get('hardware_status'),
                             'last_action': bl_state.get('last_action', 'none'),
                             'last_check_time': bl_state.get('last_check_time'),
                             'running': bl_state.get('running', False),
-                            'error_state': bl_state.get('error_message')
+                            'error_message': bl_state.get('error_message')
                         }
                     except Exception as e:
                         controllers['buffer_load_controller'] = {
@@ -538,16 +564,65 @@ class HTTPService:
                 # Get the heating system logger
                 heating_logger = logging.getLogger('heating_system')
                 
-                # Try to get logs from the logging system if available
+                # First try to get logs from systemd journal (since service runs via systemd)
+                try:
+                    import subprocess
+                    
+                    # Try to get logs from systemd journal for heating-control service
+                    self.logger.debug("Attempting to read logs from systemd journal...")
+                    
+                    # Get last 100 lines from heating-control service
+                    cmd = ['journalctl', '-u', 'heating-control', '-n', '100', '--no-pager', '--output=short-iso']
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    
+                    if result.returncode == 0 and result.stdout.strip():
+                        journal_lines = result.stdout.strip().split('\n')
+                        log_entries = []
+                        
+                        for line in journal_lines:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            
+                            # Skip systemd metadata lines
+                            if line.startswith('-- ') or 'systemd[1]:' in line:
+                                continue
+                                
+                            # Skip HTTP/API related logs
+                            line_lower = line.lower()
+                            if any(skip_term in line_lower for skip_term in [
+                                'werkzeug', 'flask.app', '- - [', 'get /api/', 'post /api/', 
+                                'put /api/', 'delete /api/', 'options /api/', 'head /api/',
+                                'http request', 'http response'
+                            ]):
+                                continue
+                            
+                            log_entries.append(line)
+                        
+                        if log_entries:
+                            return jsonify({
+                                'logs': log_entries[-50:],  # Return last 50 entries
+                                'count': len(log_entries[-50:]),
+                                'source': 'systemd_journal',
+                                'service': 'heating-control',
+                                'timestamp': datetime.now().isoformat()
+                            })
+                    
+                except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+                    self.logger.warning(f"Could not read systemd journal: {e}")
+                except Exception as e:
+                    self.logger.warning(f"Error reading systemd journal: {e}")
+                
+                # Fallback to in-memory logs if journal access fails
                 if hasattr(self.heating_system, 'logging_system') and self.heating_system.logging_system:
                     try:
-                        # Get recent logs from the logging system
+                        # Get recent logs from the logging system (in-memory capture)
                         recent_logs = self.heating_system.logging_system.get_recent_logs(limit=100)
                         
                         # Filter out HTTP/API related logs
                         system_logs = []
                         for log_entry in recent_logs:
-                            log_text = str(log_entry).lower()
+                            log_text = str(log_entry.get('message', '')).lower()
                             # Skip HTTP/Flask/Werkzeug related logs but keep system API errors
                             skip_terms = ['flask', 'werkzeug', 'http request', 'http response', 'GET /', 'POST /', 'PUT /', 'DELETE /']
                             if any(skip_term in log_text for skip_term in skip_terms):
@@ -557,92 +632,18 @@ class HTTPService:
                         return jsonify({
                             'logs': system_logs,
                             'count': len(system_logs),
+                            'source': 'memory_capture',
                             'timestamp': datetime.now().isoformat()
                         })
                     except Exception as e:
                         self.logger.error(f"Error getting logs from logging system: {e}")
                 
-                # Fallback: try to read log files directly
-                try:
-                    from pathlib import Path
-                    
-                    # Get log file path from configuration if available
-                    possible_log_files = []
-                    
-                    # Try to get log file from heating system config
-                    if (hasattr(self.heating_system, 'config') and 
-                        hasattr(self.heating_system.config, 'logging') and 
-                        hasattr(self.heating_system.config.logging, 'log_file')):
-                        configured_log_file = self.heating_system.config.logging.log_file
-                        possible_log_files.append(configured_log_file)
-                    
-                    # Add fallback locations
-                    possible_log_files.extend([
-                        '/var/log/heating/heating_system.log',  # Primary log location
-                        'heating_system.log',
-                        'system.log',
-                        'main.log',
-                        Path(__file__).parent / 'heating_system.log',
-                        Path(__file__).parent / 'logs' / 'heating_system.log'
-                    ])
-                    
-                    log_entries = []
-                    
-                    for log_file_path in possible_log_files:
-                        try:
-                            log_path = Path(log_file_path)
-                            if log_path.exists() and log_path.is_file():
-                                # Read last 100 lines from log file
-                                with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                    lines = f.readlines()
-                                    # Get last 100 lines
-                                    recent_lines = lines[-100:] if len(lines) > 100 else lines
-                                    
-                                    for line in recent_lines:
-                                        line = line.strip()
-                                        if not line:
-                                            continue
-                                        
-                                        # Skip HTTP/API related logs (be more specific)
-                                        line_lower = line.lower()
-                                        if any(skip_term in line_lower for skip_term in [
-                                            'werkzeug', 'flask.app', '- - [', 'get /api/', 'post /api/', 
-                                            'put /api/', 'delete /api/', 'options /api/', 'head /api/',
-                                            'http request', 'http response'
-                                        ]):
-                                            continue
-                                        
-                                        log_entries.append(line)
-                                break  # Found a log file, use it
-                        except Exception:
-                            continue  # Try next log file
-                    
-                    if log_entries:
-                        return jsonify({
-                            'logs': log_entries[-50:],  # Return last 50 entries
-                            'count': len(log_entries[-50:]),
-                            'source': 'log_file',
-                            'timestamp': datetime.now().isoformat()
-                        })
-                    else:
-                        # Return debug information if no logs found
-                        return jsonify({
-                            'logs': [],
-                            'count': 0,
-                            'source': 'log_file',
-                            'error': 'No log entries found',
-                            'searched_files': [str(p) for p in possible_log_files],
-                            'timestamp': datetime.now().isoformat()
-                        })
-                    
-                except Exception as e:
-                    self.logger.error(f"Error reading log files: {e}")
-                
-                # Final fallback: return empty logs
+                # Final fallback - no logs available
                 return jsonify({
                     'logs': [],
                     'count': 0,
-                    'message': 'No log data available',
+                    'source': 'none',
+                    'error': 'No log source available - journal access failed and no memory logs',
                     'timestamp': datetime.now().isoformat()
                 })
                 

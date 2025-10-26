@@ -59,23 +59,38 @@ class HeatingSystemLogger:
         self.setup_logging()
         
     def setup_logging(self) -> None:
+        """Setup logging to use only systemd journal (via stdout/stderr)"""
+        
+        # Simple formatter for journal output
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            '%(name)s - %(levelname)s - %(message)s'
         )
         
+        # Console handler for stdout (systemd captures this automatically)
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         
-        # Set up log capture handler for dashboard
+        # Set up log capture handler for dashboard (in-memory only)
         self.log_capture_handler.setFormatter(formatter)
         
+        # Configure root logger
         root_logger = logging.getLogger()
         root_logger.setLevel(getattr(logging, self.log_level.upper()))
         root_logger.addHandler(console_handler)
-        root_logger.addHandler(self.log_capture_handler)  # Capture all logs
+        root_logger.addHandler(self.log_capture_handler)  # For API access
         
-        if self._is_log_dir_writable():
-            self._setup_file_handlers(formatter)
+                # Remove all file-based logging - systemd journal handles everything
+        self.main_logger.info("Logging configured for systemd journal output")
+    
+    def get_recent_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent log entries from memory capture"""
+        try:
+            # Convert deque to list and return last 'limit' entries
+            all_records = list(self.log_capture_handler.records)
+            return all_records[-limit:] if len(all_records) > limit else all_records
+        except Exception as e:
+            self.main_logger.error(f"Error getting recent logs: {e}")
+            return []
     
     def _is_log_dir_writable(self) -> bool:
         try:

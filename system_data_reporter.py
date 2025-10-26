@@ -29,14 +29,19 @@ class SystemDataReporter:
             sensor_manager: Sensor manager instance
             hardware_controller: Hardware controller for reading pump states
             api_url: Base URL of the API to report to
-            report_interval: Reporting interval in seconds
+            report_interval: Check interval in seconds (not actual reporting interval)
         """
         self.config = config
         self.sensor_manager = sensor_manager
         self.hardware_controller = hardware_controller
         self.api_url = api_url.rstrip('/')
-        self.report_interval = report_interval
+        self.report_interval = report_interval  # How often to check for changes
         self.logger = logging.getLogger("heating.system_data_reporter")
+        
+        # Change-based reporting configuration
+        self.temperature_threshold = 2  # °C - minimum change to trigger report
+        self.power_threshold = 500  # W - minimum power change to trigger report  
+        self.force_report_interval = 15 * 60  # 15 minutes - force report even if no changes
         
         # Threading control
         self._stop_event = threading.Event()
@@ -49,6 +54,12 @@ class SystemDataReporter:
         self.last_report_time: Optional[datetime] = None
         self.last_error: Optional[str] = None
         
+        # Last reported values for change detection
+        self._last_reported_temperatures = {}  # sensor_id -> last_value
+        self._last_reported_power = {}  # element_name -> last_power
+        self._last_reported_pumps = {}  # pump_name -> last_state
+        self._last_force_report_time = datetime.now()
+        
         # Power and running state tracking
         self._heating_element_states = {}  # Track heating element on/off states
         self._pump_states = {}  # Track pump running states
@@ -58,7 +69,8 @@ class SystemDataReporter:
         self._initialize_power_tracking()
         self._initialize_pump_tracking()
         
-        self.logger.info(f"System data reporter initialized - API: {self.api_url}, Interval: {report_interval}s")
+        self.logger.info(f"System data reporter initialized - API: {self.api_url}")
+        self.logger.info(f"Change-based reporting: temp ±{self.temperature_threshold}°C, power ±{self.power_threshold}W, force every {self.force_report_interval/60:.0f}min")
         self.logger.info(f"Equipment tracking: {len(self._heating_element_states)} heating elements, {len(self._pump_states)} pumps")
     
     def _initialize_power_tracking(self) -> None:
@@ -198,18 +210,30 @@ class SystemDataReporter:
         self.logger.info("🛑 System data reporter stopped")
 
     def _reporting_loop(self) -> None:
-        """Main reporting loop that runs in a separate thread"""
-        self.logger.info(f"📊 System data reporting loop started - will report every {self.report_interval}s")
+        """Main reporting loop that runs in a separate thread with change-based reporting"""
+        self.logger.info(f"📊 System data reporting loop started - change-based reporting with {self.force_report_interval/60:.0f}min max interval")
         
         while not self._stop_event.is_set():
             try:
-                # Update equipment states before collecting data
+                # Update equipment states before checking for changes
                 self._update_equipment_states()
                 
-                # Collect and send all system data
-                self._collect_and_send_data()
+                # Check if we need to send a report (changes detected or time elapsed)
+                should_report, reasons = self._should_send_report()
                 
-                # Wait for the next interval or until stop event
+                if should_report:
+                    self.logger.info(f"Sending bulk update with changed devices: {', '.join(reasons)}")
+                    # Collect and send only changed devices in bulk
+                    changed_devices = self._collect_changed_devices()
+                    if changed_devices:
+                        self._send_bulk_update(changed_devices)
+                        self._update_last_reported_values()
+                    else:
+                        self.logger.debug("No changed devices to send")
+                else:
+                    self.logger.debug("No significant changes detected - skipping report")
+                
+                # Wait for the next check interval
                 self._stop_event.wait(self.report_interval)
                 
             except Exception as e:
@@ -220,6 +244,279 @@ class SystemDataReporter:
                 self._stop_event.wait(min(self.report_interval, 10))
         
         self.logger.info("System data reporting loop ended")
+    
+    def _should_send_report(self) -> tuple[bool, list]:
+        """
+        Determine if a report should be sent based on changes and time elapsed
+        
+        Returns:
+            Tuple of (should_send, list_of_reasons)
+        """
+        reasons = []
+        current_time = datetime.now()
+        
+        # Check if force report time has elapsed (15 minutes)
+        time_since_last_force = (current_time - self._last_force_report_time).total_seconds()
+        if time_since_last_force >= self.force_report_interval:
+            reasons.append(f"15min interval reached")
+            self._last_force_report_time = current_time
+            return True, reasons
+        
+        # Check temperature changes
+        try:
+            temperature_readings = self.sensor_manager.read_all_temperatures()
+            for sensor_id, reading in temperature_readings.items():
+                if reading.is_valid:
+                    last_value = self._last_reported_temperatures.get(sensor_id)
+                    if last_value is None:
+                        reasons.append(f"new sensor {sensor_id}")
+                    elif abs(reading.value - last_value) >= self.temperature_threshold:
+                        reasons.append(f"temp {sensor_id} Δ{reading.value - last_value:+.1f}°C")
+        except Exception as e:
+            self.logger.error(f"Error checking temperature changes: {e}")
+        
+        # Check power changes (heating elements)
+        for element_name, element_data in self._heating_element_states.items():
+            current_power = element_data['power_kw'] * 1000 if element_data['is_on'] else 0.0
+            last_power = self._last_reported_power.get(element_name)
+            if last_power is None:
+                reasons.append(f"new heating element {element_name}")
+            elif abs(current_power - last_power) >= self.power_threshold:
+                reasons.append(f"power {element_name} Δ{current_power - last_power:+.0f}W")
+        
+        # Check pump state changes
+        for pump_name, pump_data in self._pump_states.items():
+            current_state = 1 if pump_data['is_running'] else 0
+            last_state = self._last_reported_pumps.get(pump_name)
+            if last_state is None:
+                reasons.append(f"new pump {pump_name}")
+            elif current_state != last_state:
+                state_text = "started" if current_state else "stopped"
+                reasons.append(f"pump {pump_name} {state_text}")
+        
+        return len(reasons) > 0, reasons
+    
+    def _collect_changed_devices(self) -> List[Dict]:
+        """
+        Collect only devices that have changed beyond thresholds or are new
+        
+        Returns:
+            List of device data dictionaries for devices that have changed
+        """
+        changed_devices = []
+        current_time = datetime.now()
+        
+        # Check for changed temperatures
+        try:
+            temperature_readings = self.sensor_manager.read_all_temperatures()
+            for sensor_id, reading in temperature_readings.items():
+                if reading.is_valid:
+                    last_value = self._last_reported_temperatures.get(sensor_id)
+                    time_since_last_force = (current_time - self._last_force_report_time).total_seconds()
+                    
+                    # Include if: new sensor, significant change, or force report time
+                    should_include = (
+                        last_value is None or  # New sensor
+                        abs(reading.value - last_value) >= self.temperature_threshold or  # Significant change
+                        time_since_last_force >= self.force_report_interval  # Force report time
+                    )
+                    
+                    if should_include:
+                        sensor_config = self.config.sensor_paths.get(sensor_id, {})
+                        device_name = sensor_config.get('description', sensor_id)
+                        sensor_uuid = sensor_config.get('uuid', str(uuid.uuid4()))
+                        
+                        changed_devices.append({
+                            "sensor_type": "temperature",
+                            "value": reading.value,
+                            "uuid": sensor_uuid,
+                            "device_name": device_name
+                        })
+        except Exception as e:
+            self.logger.error(f"Error collecting changed temperatures: {e}")
+        
+        # Check for changed heating elements
+        for element_name, element_data in self._heating_element_states.items():
+            current_power = element_data['power_kw'] * 1000 if element_data['is_on'] else 0.0
+            last_power = self._last_reported_power.get(element_name)
+            time_since_last_force = (current_time - self._last_force_report_time).total_seconds()
+            
+            # Include if: new element, significant change, or force report time
+            should_include = (
+                last_power is None or  # New element
+                abs(current_power - last_power) >= self.power_threshold or  # Significant change
+                time_since_last_force >= self.force_report_interval  # Force report time
+            )
+            
+            if should_include:
+                changed_devices.append({
+                    "sensor_type": "power",
+                    "value": current_power,
+                    "uuid": element_data['uuid'],
+                    "device_name": element_data['description']
+                })
+        
+        # Check for changed pumps
+        for pump_name, pump_data in self._pump_states.items():
+            current_state = 1 if pump_data['is_running'] else 0
+            last_state = self._last_reported_pumps.get(pump_name)
+            time_since_last_force = (current_time - self._last_force_report_time).total_seconds()
+            
+            # Include if: new pump, state change, or force report time
+            should_include = (
+                last_state is None or  # New pump
+                current_state != last_state or  # State change
+                time_since_last_force >= self.force_report_interval  # Force report time
+            )
+            
+            if should_include:
+                changed_devices.append({
+                    "sensor_type": "running_hours",
+                    "value": current_state,
+                    "uuid": pump_data['uuid'],
+                    "device_name": pump_data['description']
+                })
+        
+        return changed_devices
+    
+    def _send_bulk_update(self, changed_devices: List[Dict]) -> None:
+        """
+        Send bulk update with only changed devices
+        
+        Args:
+            changed_devices: List of device data for devices that have changed
+        """
+        if not changed_devices:
+            return
+        
+        try:
+            # Create bulk submission payload with only changed devices
+            bulk_data = {
+                "batch_uuid": str(uuid.uuid4()),
+                "data": changed_devices
+            }
+            
+            # Send data to API with retry logic
+            success = self._send_to_api_with_retry(bulk_data, max_retries=3)
+            
+            if success:
+                self.total_reports_sent += 1
+                self.last_report_time = datetime.now()
+                device_count = len(changed_devices)
+                device_types = {}
+                for device in changed_devices:
+                    device_type = device['sensor_type']
+                    device_types[device_type] = device_types.get(device_type, 0) + 1
+                
+                type_summary = ", ".join([f"{count} {type}" for type, count in device_types.items()])
+                self.logger.info(f"Successfully sent bulk update: {device_count} devices ({type_summary})")
+            else:
+                self.total_errors += 1
+                
+        except Exception as e:
+            self.logger.error(f"Error sending bulk update: {e}")
+            self.total_errors += 1
+            self.last_error = str(e)
+    
+    def _collect_all_devices(self) -> List[Dict]:
+        """
+        Collect all devices for immediate/force reporting
+        
+        Returns:
+            List of all device data dictionaries
+        """
+        all_devices = []
+        
+        # Get all temperatures
+        try:
+            temperature_readings = self.sensor_manager.read_all_temperatures()
+            for sensor_id, reading in temperature_readings.items():
+                if reading.is_valid:
+                    sensor_config = self.config.sensor_paths.get(sensor_id, {})
+                    device_name = sensor_config.get('description', sensor_id)
+                    sensor_uuid = sensor_config.get('uuid', str(uuid.uuid4()))
+                    
+                    all_devices.append({
+                        "sensor_type": "temperature",
+                        "value": reading.value,
+                        "uuid": sensor_uuid,
+                        "device_name": device_name
+                    })
+        except Exception as e:
+            self.logger.error(f"Error collecting all temperatures: {e}")
+        
+        # Get all heating elements
+        for element_name, element_data in self._heating_element_states.items():
+            current_power = element_data['power_kw'] * 1000 if element_data['is_on'] else 0.0
+            all_devices.append({
+                "sensor_type": "power",
+                "value": current_power,
+                "uuid": element_data['uuid'],
+                "device_name": element_data['description']
+            })
+        
+        # Get all pumps
+        for pump_name, pump_data in self._pump_states.items():
+            current_state = 1 if pump_data['is_running'] else 0
+            all_devices.append({
+                "sensor_type": "running_hours",
+                "value": current_state,
+                "uuid": pump_data['uuid'],
+                "device_name": pump_data['description']
+            })
+        
+        return all_devices
+    
+    def _update_last_reported_values(self) -> None:
+        """Update the last reported values for devices that were actually sent"""
+        try:
+            current_time = datetime.now()
+            
+            # Only update if force report time was reached (all devices sent)
+            time_since_last_force = (current_time - self._last_force_report_time).total_seconds()
+            if time_since_last_force >= self.force_report_interval:
+                self._last_force_report_time = current_time
+                
+                # Update all device values when force report occurs
+                temperature_readings = self.sensor_manager.read_all_temperatures()
+                for sensor_id, reading in temperature_readings.items():
+                    if reading.is_valid:
+                        self._last_reported_temperatures[sensor_id] = reading.value
+                
+                for element_name, element_data in self._heating_element_states.items():
+                    current_power = element_data['power_kw'] * 1000 if element_data['is_on'] else 0.0
+                    self._last_reported_power[element_name] = current_power
+                
+                for pump_name, pump_data in self._pump_states.items():
+                    current_state = 1 if pump_data['is_running'] else 0
+                    self._last_reported_pumps[pump_name] = current_state
+                    
+                self.logger.debug("Updated all device values after force report")
+            else:
+                # Update only changed device values
+                temperature_readings = self.sensor_manager.read_all_temperatures()
+                for sensor_id, reading in temperature_readings.items():
+                    if reading.is_valid:
+                        last_value = self._last_reported_temperatures.get(sensor_id)
+                        if last_value is None or abs(reading.value - last_value) >= self.temperature_threshold:
+                            self._last_reported_temperatures[sensor_id] = reading.value
+                
+                for element_name, element_data in self._heating_element_states.items():
+                    current_power = element_data['power_kw'] * 1000 if element_data['is_on'] else 0.0
+                    last_power = self._last_reported_power.get(element_name)
+                    if last_power is None or abs(current_power - last_power) >= self.power_threshold:
+                        self._last_reported_power[element_name] = current_power
+                
+                for pump_name, pump_data in self._pump_states.items():
+                    current_state = 1 if pump_data['is_running'] else 0
+                    last_state = self._last_reported_pumps.get(pump_name)
+                    if last_state is None or current_state != last_state:
+                        self._last_reported_pumps[pump_name] = current_state
+                        
+                self.logger.debug("Updated changed device values only")
+                
+        except Exception as e:
+            self.logger.error(f"Error updating last reported values: {e}")
     
     def _collect_and_send_data(self) -> None:
         """Collect all system data (temperature, power, running hours) and send to API"""
@@ -436,7 +733,11 @@ class SystemDataReporter:
         try:
             # Update equipment states before reporting
             self._update_equipment_states()
-            self._collect_and_send_data()
+            # Force report all devices immediately
+            all_devices = self._collect_all_devices()
+            if all_devices:
+                self._send_bulk_update(all_devices)
+                self._update_last_reported_values()
             return True
         except Exception as e:
             self.logger.error(f"Error in immediate report: {e}")
@@ -449,6 +750,10 @@ class SystemDataReporter:
         Returns:
             Status dictionary with statistics and state
         """
+        current_time = datetime.now()
+        time_since_last_force = (current_time - self._last_force_report_time).total_seconds()
+        next_force_report_in = max(0, self.force_report_interval - time_since_last_force)
+        
         return {
             "is_running": self._is_running,
             "api_url": self.api_url,
@@ -461,7 +766,16 @@ class SystemDataReporter:
             "heating_element_count": len(self._heating_element_states),
             "pump_count": len(self._pump_states),
             "heating_elements": {name: data['is_on'] for name, data in self._heating_element_states.items()},
-            "pumps": {name: data['is_running'] for name, data in self._pump_states.items()}
+            "pumps": {name: data['is_running'] for name, data in self._pump_states.items()},
+            # Change-based reporting status
+            "change_based_reporting": True,
+            "temperature_threshold": self.temperature_threshold,
+            "power_threshold": self.power_threshold,
+            "force_report_interval_minutes": self.force_report_interval / 60,
+            "next_force_report_in_seconds": next_force_report_in,
+            "tracked_temperatures": len(self._last_reported_temperatures),
+            "tracked_power_devices": len(self._last_reported_power),
+            "tracked_pumps": len(self._last_reported_pumps)
         }
     
     def test_api_connection(self) -> bool:

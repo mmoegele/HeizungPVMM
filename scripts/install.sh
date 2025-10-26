@@ -17,9 +17,9 @@ mkdir -p /var/log/heating
 chown -R pi:pi /var/log/heating
 
 # Kopiere und aktiviere Service
-cp heating-control.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable heating-control.service
+sudo cp heating-control.service /etc/systemd/system/
+sudo  systemctl daemon-reload
+sudo  systemctl enable heating-control.service
 
 # Erstelle Backup-Verzeichnis
 mkdir -p /home/pi/Documents/HeizungPVMM/backups

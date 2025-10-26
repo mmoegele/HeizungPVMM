@@ -1129,7 +1129,7 @@
             // Add health indicator styling
             if (status.error || status.thread_healthy === false) {
                 div.style.borderLeftColor = '#e74c3c';
-            } else if (status.thread_healthy === true || (status.is_pump_active || status.active_mixers?.length > 0)) {
+            } else if (status.thread_healthy === true || (status.pump_active || status.active_mixers?.length > 0)) {
                 div.style.borderLeftColor = '#27ae60';  
             } else {
                 div.style.borderLeftColor = '#f39c12';
@@ -1149,7 +1149,7 @@
                 const running = status.running ? '▶️ Läuft' : '⏸️ Gestoppt';
                 
                 details = `
-                    <div class="main-value">Pumpe: ${status.is_pump_active ? 'AN' : 'AUS'}</div>
+                    <div class="main-value">Pumpe: ${status.pump_active ? 'AN' : 'AUS'}</div>
                     <div class="main-value">BHKW: ${bhkwIcon} ${status.bhkw_active ? 'Aktiv' : 'Inaktiv'}</div>
                     <div class="main-value">Temp: ${status.last_temperature !== null && status.last_temperature !== undefined ? status.last_temperature.toFixed(1) + '°C' : 'N/A'}</div>
                     <div class="main-value">Ziel: ${status.target_temperature !== null && status.target_temperature !== undefined ? status.target_temperature + '°C' : 'N/A'}</div>
@@ -1213,21 +1213,29 @@
                     ${activeMixers.length > 0 ? `<div>Aktiv: ${activeMixers.join(', ')}</div>` : '<div>Alle inaktiv</div>'}
                 `;
             } else if (controllerId === 'buffer_load_controller') {
-                const sourceTemp = (status.source_temp !== null && status.source_temp !== undefined) ? status.source_temp.toFixed(1) + '°C' : 'N/A';
-                const targetTemp = (status.target_temp !== null && status.target_temp !== undefined) ? status.target_temp.toFixed(1) + '°C' : 'N/A';
-                const tempDiff = (status.source_temp !== null && status.source_temp !== undefined && 
-                                 status.target_temp !== null && status.target_temp !== undefined) 
-                                 ? (status.source_temp - status.target_temp).toFixed(1) + '°C' : 'N/A';
+                const konradTemp = (status.konrad_temp !== null && status.konrad_temp !== undefined) ? status.konrad_temp.toFixed(1) + '°C' : 'N/A';
+                const michaelTemp = (status.michael_temp !== null && status.michael_temp !== undefined) ? status.michael_temp.toFixed(1) + '°C' : 'N/A';
+                const tempDiff = (status.temp_difference !== null && status.temp_difference !== undefined) 
+                                 ? status.temp_difference.toFixed(1) + '°C' : 'N/A';
                 const running = status.running ? '▶️ Läuft' : '⏸️ Gestoppt';
                 
+                // Pump state with mismatch detection
+                let pumpStatus = status.pump_active ? 'AN' : 'AUS';
+                if (status.pump_state_mismatch === true) {
+                    pumpStatus += ' ⚠️ MISMATCH';
+                } else if (status.actual_pump_state !== null && status.actual_pump_state !== undefined) {
+                    const actualState = status.actual_pump_state ? 'AN' : 'AUS';
+                    pumpStatus += ` (${actualState})`;
+                }
+                
                 details = `
-                    <div class="main-value">Pumpe: ${status.is_pump_active ? 'AN' : 'AUS'}</div>
-                    <div class="main-value">Quelle (${status.source_sensor}): ${sourceTemp}</div>
-                    <div class="main-value">Ziel (${status.target_sensor}): ${targetTemp}</div>
+                    <div class="main-value">Pumpe: ${pumpStatus}</div>
+                    <div class="main-value">Konrad (${status.konrad_sensor}): ${konradTemp}</div>
+                    <div class="main-value">Michael (${status.michael_sensor}): ${michaelTemp}</div>
                     <div class="main-value">Temperaturdifferenz: ${tempDiff}</div>
                     <div class="status-info">
-                        Status: ${running} | 
-                        ${getControllerStatusInfo(status).replace(/<div>/g, '').replace(/<\/div>/g, ' | ').replace(/\s*\|\s*$/, '')}
+                        Status: ${running} | ${status.hardware_status || 'Hardware: Unbekannt'}
+                        ${status.error_message ? ' | Fehler: ' + status.error_message : ''}
                     </div>
                 `;
             } else if (controllerId === 'evcc_controller') {
@@ -1683,32 +1691,60 @@
                 const range = vehicle.range || 0;
                 const capacity = vehicle.capacity || 0;
                 const title = vehicle.title || `Fahrzeug ${index + 1}`;
+                const loadpointTitle = vehicle.loadpoint_title || `LP${(vehicle.loadpoint || 0) + 1}`;
+                const connected = vehicle.connected || false;
+                const charging = vehicle.charging || false;
                 
                 let socClass = 'warning';
                 let statusText = 'Normal';
                 let statusClass = 'good';
                 
-                if (soc > 80) {
-                    socClass = 'positive';
-                    statusText = 'Voll';
+                // Determine status based on connection and charging state
+                if (charging) {
+                    statusText = 'Lädt';
                     statusClass = 'excellent';
-                } else if (soc > 50) {
                     socClass = 'positive';
-                    statusText = 'Gut';
+                } else if (connected) {
+                    statusText = 'Verbunden';
                     statusClass = 'good';
-                } else if (soc > 20) {
-                    socClass = 'warning';
-                    statusText = 'Niedrig';
-                    statusClass = 'warning';
+                    if (soc > 80) {
+                        socClass = 'positive';
+                        statusText = 'Voll';
+                    } else if (soc > 50) {
+                        socClass = 'positive';
+                    } else if (soc > 20) {
+                        socClass = 'warning';
+                    } else {
+                        socClass = 'negative';
+                    }
                 } else {
-                    socClass = 'negative';
-                    statusText = 'Kritisch';
-                    statusClass = 'critical';
+                    // Not connected - show SoC-based status
+                    if (soc > 80) {
+                        socClass = 'positive';
+                        statusText = 'Voll';
+                        statusClass = 'excellent';
+                    } else if (soc > 50) {
+                        socClass = 'positive';
+                        statusText = 'Gut';
+                        statusClass = 'good';
+                    } else if (soc > 20) {
+                        socClass = 'warning';
+                        statusText = 'Niedrig';
+                        statusClass = 'warning';
+                    } else if (soc > 0) {
+                        socClass = 'negative';
+                        statusText = 'Kritisch';
+                        statusClass = 'critical';
+                    } else {
+                        socClass = 'neutral';
+                        statusText = 'Getrennt';
+                        statusClass = 'neutral';
+                    }
                 }
 
                 return `
                     <tr>
-                        <td>${title}</td>
+                        <td>${title}<br><small class="text-muted">${loadpointTitle}</small></td>
                         <td><span class="evcc-value ${socClass}">${soc.toFixed(0)}%</span></td>
                         <td>${range.toFixed(0)} km</td>
                         <td>${capacity.toFixed(1)} kWh</td>
