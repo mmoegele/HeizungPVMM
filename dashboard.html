@@ -363,6 +363,157 @@
             color: #721c24;
         }
 
+        /* Manual Mode Styles */
+        .manual-mode-container {
+            padding: 0;
+        }
+
+        .manual-mode-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background-color: #f8fafc;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid #e2e8f0;
+        }
+
+        .status-indicator {
+            font-weight: bold;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            background-color: #9ca3af;
+            color: white;
+        }
+
+        .status-indicator.active {
+            background-color: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.inactive {
+            background-color: #6b7280;
+        }
+
+        .remaining-time {
+            color: #374151;
+            font-weight: 500;
+        }
+
+        .manual-mode-controls {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 1rem;
+            align-items: end;
+            margin-bottom: 1rem;
+        }
+
+        .duration-selector label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .duration-selector select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.25rem;
+            background-color: white;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            min-width: 100px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background-color: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: #2563eb;
+        }
+
+        .btn-secondary {
+            background-color: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #4b5563;
+        }
+
+        .btn-danger {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background-color: #dc2626;
+        }
+
+        .heating-elements-status {
+            background-color: #f8fafc;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            border: 1px solid #e2e8f0;
+        }
+
+        .heating-elements-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.5rem;
+        }
+
+        .heating-element {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            background-color: white;
+            border: 1px solid #e2e8f0;
+        }
+
+        .heating-element.active {
+            background-color: #fef3c7;
+            border-color: #f59e0b;
+        }
+
+        .heating-element-name {
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .heating-element-status {
+            font-size: 1.2em;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
         .controller-status {
             display: grid;
             gap: 1rem;
@@ -738,6 +889,25 @@
                 font-size: 0.75rem;
             }
 
+            .manual-mode-controls {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
+
+            .control-buttons {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .btn {
+                width: 100%;
+                min-width: auto;
+            }
+
+            .heating-elements-grid {
+                grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            }
+
             .temp-table,
             .evcc-table {
                 min-width: 500px;
@@ -851,6 +1021,48 @@
                         <!-- Will be populated by JavaScript -->
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🎛️ EVCC Manueller Modus</h2>
+            <div class="manual-mode-container">
+                <div class="manual-mode-status" id="manual-mode-status">
+                    <div class="status-indicator" id="manual-mode-indicator">⚫ Inaktiv</div>
+                    <div class="remaining-time" id="manual-mode-time" style="display: none;">
+                        Verbleibend: <span id="remaining-minutes">--</span> Min
+                    </div>
+                </div>
+                
+                <div class="manual-mode-controls">
+                    <div class="duration-selector">
+                        <label for="manual-duration">Dauer (Minuten):</label>
+                        <select id="manual-duration">
+                            <option value="5">5 Min</option>
+                            <option value="10">10 Min</option>
+                            <option value="15" selected>15 Min</option>
+                            <option value="30">30 Min</option>
+                            <option value="45">45 Min</option>
+                            <option value="60">60 Min</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-buttons">
+                        <button id="activate-manual" class="btn btn-primary" onclick="activateManualMode()">
+                            ▶️ Aktivieren
+                        </button>
+                        <button id="extend-manual" class="btn btn-secondary" onclick="extendManualMode()" disabled>
+                            ⏱️ Verlängern
+                        </button>
+                        <button id="deactivate-manual" class="btn btn-danger" onclick="deactivateManualMode()" disabled>
+                            ⏹️ Deaktivieren
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="heating-elements-status" id="heating-elements-status">
+                    <!-- Will be populated by JavaScript -->
+                </div>
             </div>
         </div>
 
@@ -1795,6 +2007,177 @@
             updateLogsDisplay();
         }
 
+        // Manual Mode Functions
+        async function activateManualMode() {
+            const duration = parseInt(document.getElementById('manual-duration').value);
+            
+            try {
+                const response = await fetch('/api/evcc/manual-mode/activate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({ duration_minutes: duration })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log('Manual mode activated:', result);
+                    await updateManualModeDisplay();
+                } else {
+                    console.error('Failed to activate manual mode:', result);
+                    alert('Fehler beim Aktivieren des manuellen Modus: ' + (result.error || 'Unbekannter Fehler'));
+                }
+            } catch (error) {
+                console.error('Error activating manual mode:', error);
+                alert('Fehler beim Aktivieren des manuellen Modus: Verbindungsfehler');
+            }
+        }
+
+        async function deactivateManualMode() {
+            try {
+                const response = await fetch('/api/evcc/manual-mode/deactivate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    }
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log('Manual mode deactivated:', result);
+                    await updateManualModeDisplay();
+                } else {
+                    console.error('Failed to deactivate manual mode:', result);
+                    alert('Fehler beim Deaktivieren des manuellen Modus: ' + (result.error || 'Unbekannter Fehler'));
+                }
+            } catch (error) {
+                console.error('Error deactivating manual mode:', error);
+                alert('Fehler beim Deaktivieren des manuellen Modus: Verbindungsfehler');
+            }
+        }
+
+        async function extendManualMode() {
+            const additionalMinutes = parseInt(document.getElementById('manual-duration').value);
+            
+            try {
+                const response = await fetch('/api/evcc/manual-mode/extend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({ additional_minutes: additionalMinutes })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log('Manual mode extended:', result);
+                    await updateManualModeDisplay();
+                } else {
+                    console.error('Failed to extend manual mode:', result);
+                    alert('Fehler beim Verlängern des manuellen Modus: ' + (result.error || 'Unbekannter Fehler'));
+                }
+            } catch (error) {
+                console.error('Error extending manual mode:', error);
+                alert('Fehler beim Verlängern des manuellen Modus: Verbindungsfehler');
+            }
+        }
+
+        async function fetchManualModeStatus() {
+            try {
+                const response = await fetch('/api/evcc/manual-mode/status', {
+                    headers: {
+                        'X-API-Key': API_KEY
+                    }
+                });
+
+                if (response.ok) {
+                    const status = await response.json();
+                    return status;
+                } else {
+                    console.error('Failed to fetch manual mode status:', response.status);
+                    return null;
+                }
+            } catch (error) {
+                console.error('Error fetching manual mode status:', error);
+                return null;
+            }
+        }
+
+        async function updateManualModeDisplay() {
+            const status = await fetchManualModeStatus();
+            
+            if (!status) {
+                console.warn('Could not fetch manual mode status');
+                return;
+            }
+
+            // Update status indicator
+            const indicator = document.getElementById('manual-mode-indicator');
+            const timeDisplay = document.getElementById('manual-mode-time');
+            const remainingMinutes = document.getElementById('remaining-minutes');
+            
+            // Update buttons
+            const activateBtn = document.getElementById('activate-manual');
+            const extendBtn = document.getElementById('extend-manual');
+            const deactivateBtn = document.getElementById('deactivate-manual');
+            
+            if (status.is_active) {
+                indicator.textContent = '🟢 Aktiv';
+                indicator.className = 'status-indicator active';
+                
+                timeDisplay.style.display = 'block';
+                remainingMinutes.textContent = Math.ceil(status.remaining_minutes || 0);
+                
+                activateBtn.disabled = true;
+                extendBtn.disabled = false;
+                deactivateBtn.disabled = false;
+            } else {
+                indicator.textContent = '⚫ Inaktiv';
+                indicator.className = 'status-indicator inactive';
+                
+                timeDisplay.style.display = 'none';
+                
+                activateBtn.disabled = false;
+                extendBtn.disabled = true;
+                deactivateBtn.disabled = true;
+            }
+            
+            // Update heating elements display
+            updateHeatingElementsDisplay(status.heating_elements_status || {});
+        }
+
+        function updateHeatingElementsDisplay(elementsStatus) {
+            const container = document.getElementById('heating-elements-status');
+            
+            if (!elementsStatus || Object.keys(elementsStatus).length === 0) {
+                container.innerHTML = '<div class="text-muted">Keine Heizstab-Informationen verfügbar</div>';
+                return;
+            }
+            
+            const elementsHtml = Object.entries(elementsStatus).map(([name, isActive]) => `
+                <div class="heating-element ${isActive ? 'active' : ''}">
+                    <span class="heating-element-name">${name}</span>
+                    <span class="heating-element-status">${isActive ? '🔥' : '❄️'}</span>
+                </div>
+            `).join('');
+            
+            container.innerHTML = `
+                <div style="margin-bottom: 0.5rem; font-weight: 500; color: #374151;">
+                    Heizstäbe Status:
+                </div>
+                <div class="heating-elements-grid">
+                    ${elementsHtml}
+                </div>
+            `;
+        }
+
         // Main update function
         async function updateDashboard() {
             const fullStatusSuccess = await fetchFullSystemStatus();
@@ -1807,6 +2190,7 @@
             updateLoadpointsDisplay();
             updateVehiclesDisplay();
             updateLogsDisplay();
+            updateManualModeDisplay();
 
             document.getElementById('last-update').textContent = 
                 'Last Update: ' + new Date().toLocaleTimeString();

@@ -68,6 +68,12 @@ class EVCCController:
         self.confirmation_count = 0
         self.required_confirmations = 2
         
+        # Manual Mode State
+        self.manual_mode_active = False
+        self.manual_mode_start_time = None
+        self.manual_mode_duration_minutes = config.evcc.default_duration_minutes
+        self.manual_mode_elements = {}  # States when manual mode was activated
+        
         # Initialize EVCC client
         evcc_config = SolarHeatingConfig(
             evcc_base_url=config.evcc.base_url,
@@ -289,8 +295,155 @@ class EVCCController:
             'loadpoints': loadpoints_data,
             'vehicles': vehicles_data,
             'power_calculation': power_calculation,
-            'enabled': True
+            'enabled': True,
+            'manual_mode': {
+                'active': self.manual_mode_active,
+                'start_time': self.manual_mode_start_time.isoformat() if self.manual_mode_start_time else None,
+                'duration_minutes': self.manual_mode_duration_minutes,
+                'remaining_minutes': self._get_manual_mode_remaining_minutes(),
+                'elements_frozen': self.manual_mode_elements
+            }
         }
+    
+    def get_manual_mode_status(self) -> Dict:
+        """Get detailed manual mode status including heating elements"""
+        # Get current heating element states
+        current_heating_elements = self._get_current_heating_element_states()
+        
+        return {
+            'is_active': self.manual_mode_active,
+            'start_time': self.manual_mode_start_time.isoformat() if self.manual_mode_start_time else None,
+            'duration_minutes': self.manual_mode_duration_minutes if self.manual_mode_active else 0,
+            'remaining_minutes': self._get_manual_mode_remaining_minutes() if self.manual_mode_active else 0,
+            'frozen_elements': self.manual_mode_elements if self.manual_mode_active else {},
+            'heating_elements_status': current_heating_elements,
+            'config': {
+                'enabled': self.config.evcc.enable_manual_override,
+                'min_duration': self.config.evcc.min_duration_minutes,
+                'max_duration': self.config.evcc.max_duration_minutes,
+                'default_duration': self.config.evcc.default_duration_minutes
+            }
+        }
+    
+    def activate_manual_mode(self, duration_minutes: Optional[int] = None) -> Dict:
+        """Activate manual mode for specified duration"""
+        if not self.config.evcc.enable_manual_override:
+            return {'success': False, 'error': 'Manual override disabled in configuration'}
+        
+        # Validate duration
+        if duration_minutes is None:
+            duration_minutes = self.config.evcc.default_duration_minutes
+        
+        if duration_minutes < self.config.evcc.min_duration_minutes:
+            duration_minutes = self.config.evcc.min_duration_minutes
+        elif duration_minutes > self.config.evcc.max_duration_minutes:
+            duration_minutes = self.config.evcc.max_duration_minutes
+        
+        # Get current heating element states
+        current_states = self._get_current_heating_element_states()
+        
+        # Activate manual mode
+        self.manual_mode_active = True
+        self.manual_mode_start_time = datetime.now()
+        self.manual_mode_duration_minutes = duration_minutes
+        self.manual_mode_elements = current_states
+        
+        # Reset confirmation system to prevent automatic changes
+        self.pending_action = None
+        self.confirmation_count = 0
+        
+        self.logger.info(f"🔒 Manual mode activated for {duration_minutes} minutes. Current elements frozen: {current_states}")
+        
+        return {
+            'success': True,
+            'duration_minutes': duration_minutes,
+            'start_time': self.manual_mode_start_time.isoformat(),
+            'frozen_elements': current_states,
+            'message': f'Manual mode activated for {duration_minutes} minutes'
+        }
+    
+    def deactivate_manual_mode(self) -> Dict:
+        """Deactivate manual mode and return to automatic control"""
+        if not self.manual_mode_active:
+            return {'success': False, 'error': 'Manual mode is not active'}
+        
+        # Store info for logging
+        duration = (datetime.now() - self.manual_mode_start_time).total_seconds() / 60
+        
+        # Deactivate manual mode
+        self.manual_mode_active = False
+        self.manual_mode_start_time = None
+        self.manual_mode_elements = {}
+        
+        # Reset confirmation system for smooth transition back to auto
+        self.pending_action = None
+        self.confirmation_count = 0
+        
+        self.logger.info(f"🔓 Manual mode deactivated after {duration:.1f} minutes. Returning to automatic control.")
+        
+        return {
+            'success': True,
+            'duration_minutes': duration,
+            'message': f'Manual mode deactivated after {duration:.1f} minutes'
+        }
+    
+    def extend_manual_mode(self, additional_minutes: int) -> Dict:
+        """Extend current manual mode duration"""
+        if not self.manual_mode_active:
+            return {'success': False, 'error': 'Manual mode is not active'}
+        
+        new_duration = self.manual_mode_duration_minutes + additional_minutes
+        
+        # Validate new duration
+        if new_duration > self.config.evcc.max_duration_minutes:
+            return {'success': False, 'error': f'Maximum duration is {self.config.evcc.max_duration_minutes} minutes'}
+        
+        self.manual_mode_duration_minutes = new_duration
+        
+        self.logger.info(f"⏰ Manual mode extended by {additional_minutes} minutes. New total: {new_duration} minutes")
+        
+        return {
+            'success': True,
+            'new_duration_minutes': new_duration,
+            'remaining_minutes': self._get_manual_mode_remaining_minutes(),
+            'message': f'Manual mode extended by {additional_minutes} minutes'
+        }
+    
+    def _get_manual_mode_remaining_minutes(self) -> Optional[int]:
+        """Get remaining minutes in manual mode"""
+        if not self.manual_mode_active or not self.manual_mode_start_time:
+            return None
+        
+        elapsed_minutes = (datetime.now() - self.manual_mode_start_time).total_seconds() / 60
+        remaining = max(0, self.manual_mode_duration_minutes - elapsed_minutes)
+        return int(remaining)
+    
+    def _check_manual_mode_expiry(self) -> bool:
+        """Check if manual mode has expired and deactivate if needed"""
+        if not self.manual_mode_active:
+            return False
+        
+        remaining = self._get_manual_mode_remaining_minutes()
+        if remaining is not None and remaining <= 0:
+            self.deactivate_manual_mode()
+            return True
+        
+        return False
+    
+    def _get_current_heating_element_states(self) -> Dict[str, bool]:
+        """Get dictionary of heating elements and their current states"""
+        element_states = {}
+        heizstab_ports = _get_heating_element_ports(self.hardware)
+        
+        for port_config in heizstab_ports:
+            try:
+                is_active = self.hardware.get_output(port_config['board'], port_config['port'])
+                element_states[port_config['description']] = is_active
+            except Exception as e:
+                self.logger.warning(f"Failed to read state of {port_config['description']}: {e}")
+                element_states[port_config['description']] = False
+        
+        return element_states
     
     def _get_power_calculation_details(self) -> Dict:
         """Get detailed power calculation information for status display"""
@@ -314,7 +467,8 @@ class EVCCController:
                 connected = lp.get('connected', False)
                 charging = lp.get('charging', False)
                 vehicle = lp.get('vehicleTitle', 'No vehicle')
-                self.logger.info(f"  Loadpoint {i}: {title} - Vehicle: {vehicle}, Connected: {connected}, Charging: {charging}")
+                vehicle_soc = lp.get('vehicleSoc', 0)
+                self.logger.info(f"  Loadpoint {i}: {title} - Vehicle: {vehicle}, Connected: {connected}, Charging: {charging}, SoC: {vehicle_soc:.1f}%")
             
             self.logger.info(f"EVCC Controller - Filtering for Garage2 only: {len(loadpoints)} loadpoints selected")
             
@@ -323,13 +477,27 @@ class EVCCController:
             vehicle_max_potential = 0
             charging_vehicles = []
             connected_vehicles = []
+            excluded_vehicles = []  # Vehicles excluded due to high SoC
             max_vehicle_charge_power = 10000  # 10kW max per vehicle
+            min_vehicle_soc_for_heating = 90.0  # Exclude vehicles with >90% SoC
             
             for i, lp in enumerate(loadpoints):
                 vehicle_name = lp.get('vehicle', f'LP{i}')
                 charge_power = lp.get('chargePower', 0)
                 is_charging = lp.get('charging', False)
                 is_connected = lp.get('connected', False)
+                vehicle_soc = lp.get('vehicleSoc', 0)
+                
+                # Check if vehicle should be excluded from heating considerations
+                if is_connected and vehicle_soc > min_vehicle_soc_for_heating:
+                    excluded_vehicles.append({
+                        'name': vehicle_name,
+                        'soc': vehicle_soc,
+                        'status': 'excluded_high_soc',
+                        'reason': f'SoC {vehicle_soc:.1f}% > {min_vehicle_soc_for_heating}%'
+                    })
+                    self.logger.info(f"EVCC Controller - Excluding vehicle {vehicle_name} from heating considerations: SoC {vehicle_soc:.1f}% > {min_vehicle_soc_for_heating}%")
+                    continue  # Skip this vehicle in power calculations
                 
                 if is_charging:
                     # Vehicle is actively charging
@@ -339,7 +507,8 @@ class EVCCController:
                         'name': vehicle_name, 
                         'power': charge_power,
                         'status': 'charging',
-                        'max_power': max_vehicle_charge_power
+                        'max_power': max_vehicle_charge_power,
+                        'soc': vehicle_soc
                     })
                 elif is_connected:
                     # Vehicle is connected - reserve full capacity (only check connected status)
@@ -347,7 +516,8 @@ class EVCCController:
                     connected_vehicles.append({
                         'name': vehicle_name,
                         'status': 'connected',
-                        'max_power': max_vehicle_charge_power
+                        'max_power': max_vehicle_charge_power,
+                        'soc': vehicle_soc
                     })
             
             # Get heating element power from config
@@ -366,18 +536,22 @@ class EVCCController:
             pv_threshold = 10000  # Keep 10kW as threshold for now
             safety_buffer = 500
             
-            # Dynamic vehicle reservation: only reserve 10kW if vehicle is connected
+            # Dynamic vehicle reservation: only reserve 10kW if vehicle is connected and needs charging
             vehicle_reservation = 0
+            vehicle_status = ""
             if connected_vehicles or charging_vehicles:
-                vehicle_reservation = 10000  # Reserve 10kW when any vehicle is connected
+                vehicle_reservation = 10000  # Reserve 10kW when any vehicle is connected and needs charging
                 vehicle_status = f"Vehicle connected - reserving {vehicle_reservation/1000:.1f}kW"
-                connected_details = [f"{v['name']}({v['status']})" for v in connected_vehicles]
-                charging_details = [f"{v['name']}({v['status']})" for v in charging_vehicles]
+                connected_details = [f"{v['name']}({v['status']}, {v['soc']:.1f}%)" for v in connected_vehicles]
+                charging_details = [f"{v['name']}({v['status']}, {v['soc']:.1f}%)" for v in charging_vehicles]
                 all_vehicles = connected_details + charging_details
                 self.logger.info(f"EVCC Controller - Vehicle reservation active: {', '.join(all_vehicles)}")
             else:
-                vehicle_status = "No vehicles connected - no reservation"
-                self.logger.info(f"EVCC Controller - No vehicle reservation: connected={len(connected_vehicles)}, charging={len(charging_vehicles)}")
+                vehicle_status = "No vehicles connected requiring power"
+                if excluded_vehicles:
+                    excluded_details = [f"{v['name']}({v['reason']})" for v in excluded_vehicles]
+                    vehicle_status += f" - excluded: {', '.join(excluded_details)}"
+                self.logger.info(f"EVCC Controller - No vehicle reservation: connected={len(connected_vehicles)}, charging={len(charging_vehicles)}, excluded={len(excluded_vehicles)}")
             
             if state.battery_soc < min_battery_soc and state.pv_power < pv_threshold:
                 # Battery < min_soc AND PV < 10kW: no heating
@@ -424,6 +598,8 @@ class EVCCController:
                 'vehicle_status': vehicle_status,
                 'charging_vehicles': charging_vehicles,
                 'connected_vehicles': connected_vehicles,
+                'excluded_vehicles': excluded_vehicles,
+                'min_vehicle_soc_for_heating': min_vehicle_soc_for_heating,
                 'effective_surplus': effective_surplus,
                 'heating_element_power': heating_element_power,
                 'priority_status': priority_status,
@@ -735,6 +911,7 @@ class EVCCClient:
             # Analyze EV charging needs
             ev_power_reservation = 0
             ev_analysis = []
+            min_vehicle_soc_for_heating = 90.0  # Exclude vehicles with >90% SoC
             
             for i, lp in enumerate(loadpoints):
                 if not isinstance(lp, dict):
@@ -745,13 +922,28 @@ class EVCCClient:
                 is_enabled = lp.get('enabled', False)
                 vehicle_id = lp.get('vehicle', f'loadpoint_{i}')
                 current_charge_power = lp.get('chargePower', 0)
+                vehicle_soc = lp.get('vehicleSoc', 0)
                 
                 if not is_connected:
                     continue
                 
+                # Check if vehicle should be excluded from heating considerations
+                if vehicle_soc > min_vehicle_soc_for_heating:
+                    ev_analysis.append({
+                        'name': vehicle_id,
+                        'soc': vehicle_soc,
+                        'target_soc': min_vehicle_soc_for_heating,
+                        'energy_needed_wh': 0,
+                        'reserved_power': 0,
+                        'charging': is_charging,
+                        'current_power': current_charge_power,
+                        'reason': f'Excluded: SoC {vehicle_soc:.1f}% > {min_vehicle_soc_for_heating}%'
+                    })
+                    self.logger.info(f"EVCC Smart Allocation - Excluding vehicle {vehicle_id}: SoC {vehicle_soc:.1f}% > {min_vehicle_soc_for_heating}%")
+                    continue  # Skip power reservation for this vehicle
+                
                 # Get vehicle info if available
                 vehicle_info = vehicles.get(vehicle_id, {}) if isinstance(vehicles, dict) else {}
-                vehicle_soc = vehicle_info.get('soc', 0)
                 target_soc = vehicle_info.get('limitSoc', 100)  # Target SoC limit
                 vehicle_capacity = vehicle_info.get('capacity', 50000)  # Wh
                 vehicle_name = vehicle_info.get('title', vehicle_id)
@@ -1097,11 +1289,32 @@ def create_evcc_controller(config, hardware, logger):
 
 def control_heating_elements_with_confirmation(evcc_client, hardware, config, logger, controller):
     """
-    Control heating elements with confirmation system - requires 2 consecutive checks 
+    Control heating elements with confirmation system and hysteresis - requires 2 consecutive checks 
     before making changes to prevent rapid cycling every 30 seconds.
     """
-    # Calculate desired number of elements based on current conditions
-    desired_elements = _calculate_desired_elements(evcc_client, config, logger)
+    # Check if manual mode has expired
+    if controller._check_manual_mode_expiry():
+        logger.info("🔓 Manual mode expired - returning to automatic control")
+    
+    # If manual mode is active, skip automatic control
+    if controller.manual_mode_active:
+        remaining = controller._get_manual_mode_remaining_minutes()
+        logger.debug(f"🔒 Manual mode active - {remaining} minutes remaining. Skipping automatic control.")
+        return
+    
+    # Get current number of active elements for hysteresis calculation
+    heizstab_ports = _get_heating_element_ports(hardware)
+    currently_active_count = 0
+    
+    for port_config in heizstab_ports:
+        try:
+            if hardware.get_output(port_config['board'], port_config['port']):
+                currently_active_count += 1
+        except Exception:
+            pass  # If we can't read the output state, assume it's off
+    
+    # Calculate desired number of elements with hysteresis consideration
+    desired_elements = _calculate_desired_elements_with_hysteresis(evcc_client, config, logger, currently_active_count)
     
     # Check if this matches our pending action
     if controller.pending_action == desired_elements:
@@ -1112,7 +1325,7 @@ def control_heating_elements_with_confirmation(evcc_client, hardware, config, lo
         
         # If we have enough confirmations, execute the action
         if controller.confirmation_count >= controller.required_confirmations:
-            logger.info(f"EVCC Action: Confirmed {desired_elements} elements - executing change")
+            logger.info(f"EVCC Action: Confirmed {desired_elements} elements - executing stepwise change")
             _apply_heating_element_changes(desired_elements, hardware, config, logger)
             
             # Reset confirmation system
@@ -1128,8 +1341,65 @@ def control_heating_elements_with_confirmation(evcc_client, hardware, config, lo
         logger.info(f"EVCC Pending: {desired_elements} elements "
                    f"(1/{controller.required_confirmations} confirmations)")
 
+def _calculate_desired_elements_with_hysteresis(evcc_client, config, logger, currently_active_count):
+    """Calculate how many heating elements should be active considering current state and hysteresis"""
+    state = evcc_client.get_state()
+    if not state:
+        logger.warning("No EVCC data available")
+        return 0
+
+    battery_soc = state.battery_soc
+    pv_power = state.pv_power
+    house_consumption = state.house_consumption
+    
+    # Get configuration values
+    min_battery_soc = getattr(config.evcc, 'min_battery_soc_for_heating', 50.0)
+    heating_element_power = getattr(config.evcc, 'heating_element_power', 2000.0)
+    turn_on_hysteresis = getattr(config.evcc, 'turn_on_hysteresis', 200.0)
+    turn_off_hysteresis = getattr(config.evcc, 'turn_off_hysteresis', 300.0)
+    pv_threshold = 10000
+    safety_buffer = 500
+
+    # Basic power availability check
+    if battery_soc < min_battery_soc and pv_power < pv_threshold:
+        logger.info(f"EVCC Hysteresis: Battery {battery_soc:.1f}% < {min_battery_soc}% and PV {pv_power/1000:.1f}kW < {pv_threshold/1000:.1f}kW - no heating allowed")
+        return 0
+    elif battery_soc > min_battery_soc:
+        effective_surplus = max(0, pv_power - house_consumption - safety_buffer)
+        logger.debug(f"EVCC Hysteresis: Battery OK - {effective_surplus/1000:.1f}kW available")
+    else:
+        effective_surplus = max(0, pv_power - house_consumption - pv_threshold - safety_buffer)
+        logger.debug(f"EVCC Hysteresis: Battery low but PV high - {effective_surplus/1000:.1f}kW available")
+
+    if effective_surplus <= 0:
+        return 0
+    
+    # Apply hysteresis logic
+    max_possible_elements = 3
+    
+    # For turning ON: need enough power for (current + 1) elements plus turn_on_hysteresis
+    # For turning OFF: can sustain current elements if power >= (current * element_power - turn_off_hysteresis)
+    
+    can_turn_on_one_more = effective_surplus >= ((currently_active_count + 1) * heating_element_power + turn_on_hysteresis)
+    can_sustain_current = effective_surplus >= (currently_active_count * heating_element_power - turn_off_hysteresis)
+    
+    if can_turn_on_one_more and currently_active_count < max_possible_elements:
+        # Can safely turn on one more element
+        desired = currently_active_count + 1
+        logger.info(f"EVCC Hysteresis: Can turn ON element {desired}: {effective_surplus/1000:.1f}kW >= {((currently_active_count + 1) * heating_element_power + turn_on_hysteresis)/1000:.1f}kW")
+        return min(desired, max_possible_elements)
+    elif can_sustain_current:
+        # Can sustain current number of elements
+        logger.debug(f"EVCC Hysteresis: Sustaining {currently_active_count} elements: {effective_surplus/1000:.1f}kW >= {(currently_active_count * heating_element_power - turn_off_hysteresis)/1000:.1f}kW")
+        return currently_active_count
+    else:
+        # Must turn off one element
+        desired = max(0, currently_active_count - 1)
+        logger.info(f"EVCC Hysteresis: Must turn OFF element: {effective_surplus/1000:.1f}kW < {(currently_active_count * heating_element_power - turn_off_hysteresis)/1000:.1f}kW, target: {desired}")
+        return desired
+
 def _calculate_desired_elements(evcc_client, config, logger):
-    """Calculate how many heating elements should be active based on updated EVCC logic"""
+    """Calculate how many heating elements should be active based on updated EVCC logic with hysteresis"""
     state = evcc_client.get_state()
     if not state:
         logger.warning("No EVCC data available")
@@ -1142,6 +1412,8 @@ def _calculate_desired_elements(evcc_client, config, logger):
     # Get configuration values
     min_battery_soc = getattr(config.evcc, 'min_battery_soc_for_heating', 50.0)
     heating_element_power = getattr(config.evcc, 'heating_element_power', 2000.0)  # Default 2kW per element
+    turn_on_hysteresis = getattr(config.evcc, 'turn_on_hysteresis', 200.0)  # 200W hysteresis for turning ON
+    turn_off_hysteresis = getattr(config.evcc, 'turn_off_hysteresis', 300.0)  # 300W hysteresis for turning OFF
     pv_threshold = 10000  # Keep 10kW threshold for now, could be made configurable
     
     safety_buffer = 500  # 500W safety buffer
@@ -1160,22 +1432,27 @@ def _calculate_desired_elements(evcc_client, config, logger):
         effective_surplus = max(0, pv_power - house_consumption - pv_threshold - safety_buffer)
         logger.info(f"EVCC: Battery {battery_soc:.1f}% < {min_battery_soc}% but PV {pv_power/1000:.1f}kW >= {pv_threshold/1000:.1f}kW - PV {pv_power/1000:.1f}kW - House {house_consumption/1000:.1f}kW - {pv_threshold/1000:.1f}kW = {effective_surplus/1000:.1f}kW available")
 
-    # Calculate number of elements based on effective surplus and heating element power
+    # Calculate number of elements based on effective surplus with hysteresis
     if effective_surplus <= 0:
         logger.info("No surplus power available for heating")
         return 0
     
-    # Calculate how many elements we can power based on available surplus
-    max_elements = int(effective_surplus / heating_element_power)
-    # Limit to maximum of 3 elements
-    desired_elements = min(max_elements, 3)
+    # Apply hysteresis-based calculation
+    # For turning ON: need surplus >= (element_power + turn_on_hysteresis)
+    # For turning OFF: surplus can drop to (element_power - turn_off_hysteresis) before turning off
     
-    logger.info(f"EVCC: {effective_surplus/1000:.1f}kW surplus / {heating_element_power/1000:.1f}kW per element = {desired_elements} elements")
+    # Calculate maximum possible elements with turn-on hysteresis
+    max_elements_with_hysteresis = int(effective_surplus / (heating_element_power + turn_on_hysteresis))
+    
+    # Limit to maximum of 3 elements
+    desired_elements = min(max_elements_with_hysteresis, 3)
+    
+    logger.info(f"EVCC: {effective_surplus/1000:.1f}kW surplus / ({heating_element_power/1000:.1f}kW + {turn_on_hysteresis/1000:.1f}kW hysteresis) = {desired_elements} elements with hysteresis")
     
     return desired_elements
 
 def _apply_heating_element_changes(desired_count, hardware, config, logger):
-    """Apply the confirmed heating element changes"""
+    """Apply the confirmed heating element changes with stepwise control"""
     global _load_balancer
 
     # Initialize load balancer if needed
@@ -1185,7 +1462,24 @@ def _apply_heating_element_changes(desired_count, hardware, config, logger):
     # Get heating element ports
     heizstab_ports = _get_heating_element_ports(hardware)
     
-    # Get prioritized list of elements based on usage
+    # Get current states of all elements
+    current_states = {}
+    currently_active_count = 0
+    
+    for port_config in heizstab_ports:
+        heizstab_id = port_config['description']
+        try:
+            current_state = hardware.get_output(port_config['board'], port_config['port'])
+            current_states[heizstab_id] = current_state
+            if current_state:
+                currently_active_count += 1
+        except Exception as e:
+            logger.warning(f"Failed to read current state of {heizstab_id}: {e}")
+            current_states[heizstab_id] = False
+    
+    logger.info(f"EVCC: Current state: {currently_active_count} elements active, target: {desired_count} elements")
+    
+    # Get prioritized list of elements based on usage (for rotation)
     priority_list = _load_balancer.get_priority_list()
     
     # Check if we should rotate elements
@@ -1193,31 +1487,68 @@ def _apply_heating_element_changes(desired_count, hardware, config, logger):
         logger.info("Rotating heating elements for load balancing")
         _load_balancer.last_rotation = datetime.now()
     
-    # Update element states and control outputs
-    heizstab_states = {id: False for id in ['heizstab_1', 'heizstab_2', 'heizstab_3']}
+    # Stepwise control: only change ONE element at a time
+    if desired_count > currently_active_count:
+        # Need to turn ON one more element
+        # Find the next element to turn on (highest priority that's currently off)
+        for heizstab_id in priority_list:
+            if not current_states.get(heizstab_id, False):  # Element is currently OFF
+                # Turn this element ON
+                matching_port = None
+                for port in heizstab_ports:
+                    if port['description'] == heizstab_id:
+                        matching_port = port
+                        break
+                
+                if matching_port:
+                    try:
+                        hardware.set_output((matching_port['board'], matching_port['port']), True)
+                        _load_balancer.update_element_state(heizstab_id, True)
+                        logger.info(f"✅ EVCC Stepwise: Turned ON {heizstab_id} "
+                                   f"(Board {matching_port['board']}, Port {matching_port['port']}) "
+                                   f"- now {currently_active_count + 1}/{desired_count} elements active")
+                        break  # Only turn on ONE element per cycle
+                    except Exception as e:
+                        logger.error(f"❌ Failed to turn ON {heizstab_id}: {e}")
+                        
+    elif desired_count < currently_active_count:
+        # Need to turn OFF one element
+        # Find an element to turn off (lowest priority that's currently on)
+        for heizstab_id in reversed(priority_list):  # Reverse to get lowest priority first
+            if current_states.get(heizstab_id, False):  # Element is currently ON
+                # Turn this element OFF
+                matching_port = None
+                for port in heizstab_ports:
+                    if port['description'] == heizstab_id:
+                        matching_port = port
+                        break
+                
+                if matching_port:
+                    try:
+                        hardware.set_output((matching_port['board'], matching_port['port']), False)
+                        _load_balancer.update_element_state(heizstab_id, False)
+                        logger.info(f"✅ EVCC Stepwise: Turned OFF {heizstab_id} "
+                                   f"(Board {matching_port['board']}, Port {matching_port['port']}) "
+                                   f"- now {currently_active_count - 1}/{desired_count} elements active")
+                        break  # Only turn off ONE element per cycle
+                    except Exception as e:
+                        logger.error(f"❌ Failed to turn OFF {heizstab_id}: {e}")
+    else:
+        # Count matches desired count - no changes needed
+        logger.debug(f"EVCC: No changes needed - {currently_active_count} elements already at target {desired_count}")
     
-    # Activate elements according to priority
-    for i in range(desired_count):
-        if i < len(priority_list):
-            heizstab_states[priority_list[i]] = True
+    # Log current status
+    active_elements = [heizstab_id for heizstab_id, state in current_states.items() if state]
+    logger.info(f"EVCC: Active elements: {active_elements} ({len(active_elements)}/3)")
     
-    # Apply the states to hardware
-    for heizstab_id, is_on in heizstab_states.items():
-        # Find the matching port configuration
-        matching_port = None
-        for port in heizstab_ports:
-            if port['description'] == heizstab_id:
-                matching_port = port
-                break
-        
-        if matching_port:
-            hardware.set_output((matching_port['board'], matching_port['port']), is_on)
-            _load_balancer.update_element_state(heizstab_id, is_on)
-            
-            logger.info(f"{heizstab_id} {'ON' if is_on else 'OFF'} "
-                       f"(Board {matching_port['board']}, Port {matching_port['port']})")
-        else:
-            logger.warning(f"No port configuration found for {heizstab_id}")
+    # Periodically log usage statistics
+    if desired_count > 0:  # Only log stats when elements should be active
+        stats = _load_balancer.get_element_stats()
+        logger.debug("Heating element statistics:")
+        for element_id, stat in stats.items():
+            logger.debug(f"{element_id}: {stat['total_runtime']:.1f}h total, "
+                       f"{stat['cycle_count']} cycles, "
+                       f"current: {stat['current_runtime']:.1f}min")
 
 def control_heating_elements(evcc_client, hardware, config, logger):
     """

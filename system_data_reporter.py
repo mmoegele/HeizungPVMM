@@ -78,12 +78,12 @@ class SystemDataReporter:
         try:
             self.logger.debug("Starting heating element power tracking initialization")
             self.logger.debug(f"Config type: {type(self.config)}")
-            self.logger.debug(f"Config has hardware: {hasattr(self.config, 'hardware')}")
+            self.logger.debug(f"Config has hardware_outputs: {hasattr(self.config, 'hardware_outputs')}")
             
-            # Get hardware outputs from hardware.outputs which contains the complete configuration
-            if hasattr(self.config, 'hardware') and hasattr(self.config.hardware, 'outputs'):
-                self.logger.debug(f"Found hardware.outputs with {len(self.config.hardware.outputs)} outputs")
-                for output_name, output_config in self.config.hardware.outputs.items():
+            # Get hardware outputs from hardware_outputs (flat structure, not nested)
+            if hasattr(self.config, 'hardware_outputs') and self.config.hardware_outputs:
+                self.logger.debug(f"Found hardware_outputs with {len(self.config.hardware_outputs)} outputs")
+                for output_name, output_config in self.config.hardware_outputs.items():
                     self.logger.debug(f"Checking output: {output_name}")
                     # Look for heating elements (heizstab)
                     if 'heizstab' in output_name.lower():
@@ -99,11 +99,11 @@ class SystemDataReporter:
                         }
                         self.logger.debug(f"Added heating element tracking: {output_name}")
             else:
-                self.logger.warning("No hardware.outputs configuration found")
-                if hasattr(self.config, 'hardware'):
-                    self.logger.debug(f"Hardware config exists but no outputs: {dir(self.config.hardware)}")
+                self.logger.warning("No hardware_outputs configuration found")
+                if hasattr(self.config, 'hardware_outputs'):
+                    self.logger.debug(f"Hardware_outputs exists but empty: {self.config.hardware_outputs}")
                 else:
-                    self.logger.debug("No hardware configuration found")
+                    self.logger.debug("No hardware_outputs attribute found")
             
             self.logger.info(f"Initialized power tracking for {len(self._heating_element_states)} heating elements")
         except Exception as e:
@@ -117,12 +117,12 @@ class SystemDataReporter:
             self.logger.debug("Starting pump tracking initialization")
             pump_names = ['puffer_lade_pumpe', 'wt_pumpe']
             
-            if hasattr(self.config, 'hardware') and hasattr(self.config.hardware, 'outputs'):
-                self.logger.debug(f"Looking for pumps in {len(self.config.hardware.outputs)} outputs: {list(self.config.hardware.outputs.keys())}")
+            if hasattr(self.config, 'hardware_outputs') and self.config.hardware_outputs:
+                self.logger.debug(f"Looking for pumps in {len(self.config.hardware_outputs)} outputs: {list(self.config.hardware_outputs.keys())}")
                 for pump_name in pump_names:
                     self.logger.debug(f"Looking for pump: {pump_name}")
-                    if pump_name in self.config.hardware.outputs:
-                        output_config = self.config.hardware.outputs[pump_name]
+                    if pump_name in self.config.hardware_outputs:
+                        output_config = self.config.hardware_outputs[pump_name]
                         self._pump_states[pump_name] = {
                             'is_running': False,
                             'board': output_config['board'],
@@ -133,9 +133,9 @@ class SystemDataReporter:
                         }
                         self.logger.debug(f"Added pump tracking: {pump_name}")
                     else:
-                        self.logger.warning(f"Pump {pump_name} not found in hardware.outputs configuration")
+                        self.logger.warning(f"Pump {pump_name} not found in hardware_outputs configuration")
             else:
-                self.logger.warning("No hardware.outputs configuration found for pump tracking")
+                self.logger.warning("No hardware_outputs configuration found for pump tracking")
             
             self.logger.info(f"Initialized pump tracking for {len(self._pump_states)} pumps")
         except Exception as e:

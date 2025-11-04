@@ -120,6 +120,11 @@ class EVCCConfig:
     turn_on_hysteresis: float = 200.0
     turn_off_hysteresis: float = 300.0
     cache_duration: int = 5
+    # Manual Mode Configuration
+    enable_manual_override: bool = True
+    default_duration_minutes: int = 15
+    max_duration_minutes: int = 60
+    min_duration_minutes: int = 5
 
 @dataclass
 class SystemDataReporterConfig:
@@ -283,6 +288,13 @@ class HeatingConfig:
             evcc_config.turn_on_hysteresis = evcc_data.get('turn_on_hysteresis', 200.0)
             evcc_config.turn_off_hysteresis = evcc_data.get('turn_off_hysteresis', 300.0)
             evcc_config.cache_duration = evcc_data.get('cache_duration', 5)
+            
+            # Manual Mode Configuration
+            manual_mode_data = evcc_data.get('manual_mode', {})
+            evcc_config.enable_manual_override = manual_mode_data.get('enable_manual_override', True)
+            evcc_config.default_duration_minutes = manual_mode_data.get('default_duration_minutes', 15)
+            evcc_config.max_duration_minutes = manual_mode_data.get('max_duration_minutes', 60)
+            evcc_config.min_duration_minutes = manual_mode_data.get('min_duration_minutes', 5)
         
         # Extract System Data Reporter configuration
         system_reporter_config = SystemDataReporterConfig()

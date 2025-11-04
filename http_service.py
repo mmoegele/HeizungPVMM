@@ -711,6 +711,86 @@ class HTTPService:
                     'connected': False,
                     'error': str(e)
                 }), 500
+        
+        # Manual Mode Control Endpoints
+        @self.app.route('/api/evcc/manual-mode/activate', methods=['POST'])
+        def activate_manual_mode():
+            """Activate manual mode for EVCC heating control"""
+            try:
+                if not hasattr(self.heating_system, 'evcc_controller') or not self.heating_system.evcc_controller:
+                    return jsonify({'error': 'EVCC controller not available'}), 503
+                
+                data = request.get_json() or {}
+                duration_minutes = data.get('duration_minutes')
+                
+                result = self.heating_system.evcc_controller.activate_manual_mode(duration_minutes)
+                
+                if result['success']:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 400
+                    
+            except Exception as e:
+                self.logger.error(f"Error activating manual mode: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/evcc/manual-mode/deactivate', methods=['POST'])
+        def deactivate_manual_mode():
+            """Deactivate manual mode and return to automatic control"""
+            try:
+                if not hasattr(self.heating_system, 'evcc_controller') or not self.heating_system.evcc_controller:
+                    return jsonify({'error': 'EVCC controller not available'}), 503
+                
+                result = self.heating_system.evcc_controller.deactivate_manual_mode()
+                
+                if result['success']:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 400
+                    
+            except Exception as e:
+                self.logger.error(f"Error deactivating manual mode: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/evcc/manual-mode/extend', methods=['POST'])
+        def extend_manual_mode():
+            """Extend manual mode duration"""
+            try:
+                if not hasattr(self.heating_system, 'evcc_controller') or not self.heating_system.evcc_controller:
+                    return jsonify({'error': 'EVCC controller not available'}), 503
+                
+                data = request.get_json() or {}
+                additional_minutes = data.get('additional_minutes')
+                
+                if not additional_minutes or additional_minutes <= 0:
+                    return jsonify({'error': 'additional_minutes must be a positive integer'}), 400
+                
+                result = self.heating_system.evcc_controller.extend_manual_mode(additional_minutes)
+                
+                if result['success']:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 400
+                    
+            except Exception as e:
+                self.logger.error(f"Error extending manual mode: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/evcc/manual-mode/status', methods=['GET'])
+        def get_manual_mode_status():
+            """Get current manual mode status"""
+            try:
+                if not hasattr(self.heating_system, 'evcc_controller') or not self.heating_system.evcc_controller:
+                    return jsonify({'error': 'EVCC controller not available'}), 503
+                
+                # Use the dedicated manual mode status method
+                status = self.heating_system.evcc_controller.get_manual_mode_status()
+                
+                return jsonify(status)
+                    
+            except Exception as e:
+                self.logger.error(f"Error getting manual mode status: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def start(self):
         """Start HTTP server in a background thread"""

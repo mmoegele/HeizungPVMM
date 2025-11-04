@@ -262,9 +262,15 @@ evcc:
   max_temperature_for_heating: 70.0
   min_surplus_duration: 120
   heating_element_power: 1700.0
-  turn_on_hysteresis: 200.0
+  turn_on_hysteresis: -100.0
   turn_off_hysteresis: 300.0
   cache_duration: 5
+  # Manual Mode Configuration
+  manual_mode:
+    enable_manual_override: true
+    default_duration_minutes: 15  # Default duration for manual mode
+    max_duration_minutes: 60      # Maximum allowed duration
+    min_duration_minutes: 5       # Minimum allowed duration
 
 # System Data Reporter Configuration (Temperature, Power, Running Hours)
 system_data_reporter:

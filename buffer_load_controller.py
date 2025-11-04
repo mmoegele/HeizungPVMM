@@ -174,71 +174,56 @@ class BufferLoadController:
             
             self.logger.info(f"Buffer control decision: Diff={temp_difference:.1f}°C, Min={self.min_temp_difference}°C, Should run={should_pump_run}, Currently active={self.state.pump_active}")
             
-            if should_pump_run and not self.state.pump_active:
-                # Turn pump ON
-                try:
-                    self.logger.info(f"Attempting to turn ON pump at port '{self.pump_port}'...")
-                    
-                    # Check hardware health before attempting control
-                    if hasattr(self.hardware, 'boards') and hasattr(self.hardware, 'port_mapping'):
-                        if self.pump_port in self.hardware.port_mapping:
-                            board, port = self.hardware.port_mapping[self.pump_port]
-                            self.logger.info(f"Pump port '{self.pump_port}' maps to board {board}, port {port}")
-                            
-                            # Check if board is available
-                            if hasattr(self.hardware, 'boards') and board < len(self.hardware.boards):
-                                board_status = self.hardware.boards[board] is not None
-                                self.logger.info(f"PiFace board {board} status: {'Available' if board_status else 'NOT AVAILABLE'}")
-                                if not board_status:
-                                    self.state.error_message = f"PiFace board {board} not available - SPI/hardware issue"
-                                    self.logger.error(f"Cannot control pump: PiFace board {board} is not available (SPI issue?)")
-                                    return
-                            else:
-                                self.logger.warning(f"Board {board} index out of range or boards not initialized")
+            # ALWAYS set the hardware state to ensure it matches desired state
+            # This handles PiFace reinitialization that resets all outputs to OFF
+            try:
+                # Check hardware health before attempting control
+                if hasattr(self.hardware, 'boards') and hasattr(self.hardware, 'port_mapping'):
+                    if self.pump_port in self.hardware.port_mapping:
+                        board, port = self.hardware.port_mapping[self.pump_port]
+                        self.logger.debug(f"Pump port '{self.pump_port}' maps to board {board}, port {port}")
+                        
+                        # Check if board is available
+                        if hasattr(self.hardware, 'boards') and board < len(self.hardware.boards):
+                            board_status = self.hardware.boards[board] is not None
+                            if not board_status:
+                                self.state.error_message = f"PiFace board {board} not available - SPI/hardware issue"
+                                self.logger.error(f"Cannot control pump: PiFace board {board} is not available (SPI issue?)")
+                                return
                         else:
-                            self.logger.error(f"Pump port '{self.pump_port}' not found in port mapping")
-                            self.state.error_message = f"Port '{self.pump_port}' not mapped"
-                            return
-                    
-                    result = self.hardware.set_output(self.pump_port, True)
-                    if result:
-                        self.state.pump_active = True
-                        self.state.last_action = "start"
-                        # Verify the hardware actually set the output
-                        actual_state = self._verify_hardware_state()
-                        if actual_state is not None and not actual_state:
-                            self.logger.error(f"❌ Hardware verification FAILED: pump command sent but actual state is OFF")
-                            self.state.error_message = "Hardware verification failed - output not set"
-                        else:
-                            self.logger.info(f"✅ Buffer pump ON: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C > {self.min_temp_difference}°C (verified: {actual_state})")
+                            self.logger.warning(f"Board {board} index out of range or boards not initialized")
                     else:
-                        self.logger.error(f"❌ Hardware command failed to turn ON pump (returned False)")
-                        self.state.error_message = "Hardware command failed (PiFace not responding?)"
-                except Exception as e:
-                    self.logger.error(f"❌ Exception turning ON buffer pump: {e}")
-                    self.state.error_message = f"Exception turning ON pump: {e}"
+                        self.logger.error(f"Pump port '{self.pump_port}' not found in port mapping")
+                        self.state.error_message = f"Port '{self.pump_port}' not mapped"
+                        return
                 
-            elif not should_pump_run and self.state.pump_active:
-                # Turn pump OFF
-                try:
-                    self.logger.info(f"Attempting to turn OFF pump at port '{self.pump_port}'...")
-                    result = self.hardware.set_output(self.pump_port, False)
-                    if result:
-                        self.state.pump_active = False
-                        self.state.last_action = "stop"
-                        # Verify the hardware actually set the output
-                        actual_state = self._verify_hardware_state()
-                        if actual_state is not None and actual_state:
-                            self.logger.error(f"❌ Hardware verification FAILED: pump stop command sent but actual state is ON")
-                            self.state.error_message = "Hardware verification failed - output not cleared"
-                        else:
-                            self.logger.info(f"✅ Buffer pump OFF: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C <= {self.min_temp_difference}°C (verified: {actual_state})")
+                # Always set the hardware to the desired state
+                result = self.hardware.set_output(self.pump_port, should_pump_run)
+                
+                if result:
+                    # Update internal state tracking
+                    state_changed = self.state.pump_active != should_pump_run
+                    self.state.pump_active = should_pump_run
+                    
+                    if state_changed:
+                        self.state.last_action = "start" if should_pump_run else "stop"
+                    
+                    # Verify the hardware actually set the output
+                    actual_state = self._verify_hardware_state()
+                    if actual_state is not None and actual_state != should_pump_run:
+                        self.logger.error(f"❌ Hardware verification FAILED: commanded {should_pump_run} but actual state is {actual_state}")
+                        self.state.error_message = "Hardware verification failed - state mismatch"
                     else:
-                        self.logger.error(f"❌ Hardware command failed to turn OFF pump (returned False)")
-                        self.state.error_message = "Hardware command failed (PiFace not responding?)"
-                except Exception as e:
-                    self.logger.error(f"❌ Exception turning OFF buffer pump: {e}")
-                    self.state.error_message = f"Exception turning OFF pump: {e}"
+                        action = "ON" if should_pump_run else "OFF"
+                        change_note = " (state changed)" if state_changed else " (state maintained)"
+                        self.logger.info(f"✅ Buffer pump {action}: Konrad={konrad_temp:.1f}°C - Michael={michael_temp:.1f}°C = {temp_difference:.1f}°C (verified: {actual_state}){change_note}")
+                else:
+                    self.logger.error(f"❌ Hardware command failed to set pump to {should_pump_run} (returned False)")
+                    self.state.error_message = "Hardware command failed (PiFace not responding?)"
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Exception setting buffer pump to {should_pump_run}: {e}")
+                self.state.error_message = f"Exception setting pump: {e}"
             
             # Log status every check (even if no change)
             status = "ON" if self.state.pump_active else "OFF"
