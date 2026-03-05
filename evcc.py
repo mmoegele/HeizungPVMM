@@ -456,9 +456,19 @@ class EVCCController:
             max_battery_charge_power = 10000  # 10kW max charging power (could be made configurable)
             battery_power = state.battery_power
             
-            # Get loadpoints for vehicle charging calculation - only consider Garage2
+            # Get loadpoints for vehicle charging calculation
             all_loadpoints = self.evcc_client.get_loadpoints() or []
-            loadpoints = [lp for lp in all_loadpoints if lp.get('title') == 'Garage2']
+            heating_loadpoints_power = sum(
+                lp.get('chargePower', 0)
+                for lp in all_loadpoints
+                if isinstance(lp, dict) and lp.get('chargerFeatureHeating', False)
+            )
+            loadpoints = [
+                lp for lp in all_loadpoints
+                if isinstance(lp, dict)
+                and not lp.get('chargerFeatureHeating', False)
+                and (lp.get('vehicleName') or lp.get('vehicleTitle'))
+            ]
             
             # Debug logging to show what we found
             self.logger.info(f"EVCC Controller - Found {len(all_loadpoints)} total loadpoints")
@@ -470,7 +480,7 @@ class EVCCController:
                 vehicle_soc = lp.get('vehicleSoc', 0)
                 self.logger.info(f"  Loadpoint {i}: {title} - Vehicle: {vehicle}, Connected: {connected}, Charging: {charging}, SoC: {vehicle_soc:.1f}%")
             
-            self.logger.info(f"EVCC Controller - Filtering for Garage2 only: {len(loadpoints)} loadpoints selected")
+            self.logger.info(f"EVCC Controller - Vehicle-related loadpoints selected: {len(loadpoints)}")
             
             # Calculate vehicle charging power and potential
             vehicle_charging_power = 0
@@ -482,11 +492,16 @@ class EVCCController:
             min_vehicle_soc_for_heating = 90.0  # Exclude vehicles with >90% SoC
             
             for i, lp in enumerate(loadpoints):
-                vehicle_name = lp.get('vehicle', f'LP{i}')
+                vehicle_name = lp.get('vehicleName') or lp.get('vehicleTitle') or f'LP{i}'
                 charge_power = lp.get('chargePower', 0)
                 is_charging = lp.get('charging', False)
                 is_connected = lp.get('connected', False)
+                is_heating_loadpoint = lp.get('chargerFeatureHeating', False)
+                has_vehicle = bool(lp.get('vehicleName') or lp.get('vehicleTitle'))
                 vehicle_soc = lp.get('vehicleSoc', 0)
+
+                if is_heating_loadpoint or not has_vehicle:
+                    continue
                 
                 # Check if vehicle should be excluded from heating considerations
                 if is_connected and vehicle_soc > min_vehicle_soc_for_heating:
@@ -593,6 +608,7 @@ class EVCCController:
                 'current_heating_power': current_heating_power,
                 'corrected_house_consumption': corrected_house_consumption,
                 'vehicle_charging_power': vehicle_charging_power,
+                'heating_loadpoints_power': heating_loadpoints_power,
                 'vehicle_max_potential': vehicle_max_potential,
                 'vehicle_reservation': vehicle_reservation,
                 'vehicle_status': vehicle_status,
@@ -792,13 +808,22 @@ class EVCCClient:
         
         try:
             # EVCC API v0.209+ has state data directly at root level (no result wrapper)
+            battery_data = status_data.get('battery') or {}
+            battery_power = battery_data.get('power', 0.0)
+            battery_soc = battery_data.get('soc', 0.0)
+            battery_configured = (
+                status_data.get('batteryConfigured')
+                if 'batteryConfigured' in status_data
+                else bool(battery_data)
+            )
+
             state = EVCCState(
                 grid_power=status_data.get('gridPower', 0.0),
                 home_power=status_data.get('homePower', 0.0),
                 pv_power=status_data.get('pvPower', 0.0),
-                battery_power=status_data.get('batteryPower', 0.0),
-                battery_soc=status_data.get('batterySoc', 0.0),
-                battery_configured=status_data.get('batteryConfigured', False),
+                battery_power=battery_power,
+                battery_soc=battery_soc,
+                battery_configured=battery_configured,
                 timestamp=datetime.now()
             )
             
@@ -880,6 +905,7 @@ class EVCCClient:
                     'pv_power': 0,
                     'home_power': 0,
                     'current_ev_charging': 0,
+                    'heating_loadpoints_power': 0,
                     'base_available': 0,
                     'safety_buffer': 0,
                     'ev_analysis': []
@@ -890,9 +916,20 @@ class EVCCClient:
             home_power = status_data.get('homePower', 0)
             loadpoints = status_data.get('loadpoints', [])
             vehicles = status_data.get('vehicles', {})
+            heating_loadpoints_power = sum(
+                lp.get('chargePower', 0)
+                for lp in loadpoints
+                if isinstance(lp, dict) and lp.get('chargerFeatureHeating', False)
+            )
             
             # Calculate base available power
-            total_current_charging = sum(lp.get('chargePower', 0) for lp in loadpoints if lp.get('charging', False))
+            total_current_charging = sum(
+                lp.get('chargePower', 0)
+                for lp in loadpoints
+                if isinstance(lp, dict)
+                and lp.get('charging', False)
+                and not lp.get('chargerFeatureHeating', False)
+            )
             base_available = pv_power - home_power - total_current_charging
             
             if base_available <= 0:
@@ -903,6 +940,7 @@ class EVCCClient:
                     'pv_power': pv_power,
                     'home_power': home_power,
                     'current_ev_charging': total_current_charging,
+                    'heating_loadpoints_power': heating_loadpoints_power,
                     'base_available': base_available,
                     'safety_buffer': 0,
                     'ev_analysis': []
@@ -920,11 +958,13 @@ class EVCCClient:
                 is_connected = lp.get('connected', False)
                 is_charging = lp.get('charging', False)
                 is_enabled = lp.get('enabled', False)
-                vehicle_id = lp.get('vehicle', f'loadpoint_{i}')
+                is_heating_loadpoint = lp.get('chargerFeatureHeating', False)
+                vehicle_id = lp.get('vehicleName') or lp.get('vehicleTitle') or f'loadpoint_{i}'
+                has_vehicle = bool(lp.get('vehicleName') or lp.get('vehicleTitle'))
                 current_charge_power = lp.get('chargePower', 0)
                 vehicle_soc = lp.get('vehicleSoc', 0)
                 
-                if not is_connected:
+                if is_heating_loadpoint or not is_connected or not has_vehicle:
                     continue
                 
                 # Check if vehicle should be excluded from heating considerations
@@ -1004,6 +1044,7 @@ class EVCCClient:
                 'pv_power': pv_power,
                 'home_power': home_power,
                 'current_ev_charging': total_current_charging,
+                'heating_loadpoints_power': heating_loadpoints_power,
                 'base_available': base_available,
                 'safety_buffer': safety_buffer,
                 'ev_analysis': ev_analysis
@@ -1021,6 +1062,7 @@ class EVCCClient:
                 'pv_power': 0,
                 'home_power': 0,
                 'current_ev_charging': 0,
+                'heating_loadpoints_power': 0,
                 'base_available': 0,
                 'safety_buffer': 0,
                 'ev_analysis': []
@@ -1034,6 +1076,7 @@ class EVCCClient:
                 'pv_power': 0,
                 'home_power': 0,
                 'current_ev_charging': 0,
+                'heating_loadpoints_power': 0,
                 'base_available': 0,
                 'safety_buffer': 0,
                 'ev_analysis': []
@@ -1079,20 +1122,15 @@ class EVCCClient:
         try:
             # Get static vehicle configuration
             vehicles_config = status_data.get('vehicles', {})
-            # Get dynamic data from loadpoints - only consider Garage2
+            # Get dynamic data from loadpoints
             all_loadpoints = status_data.get('loadpoints', [])
-            loadpoints = [lp for lp in all_loadpoints if lp.get('title') == 'Garage2']
             
-            # Collect vehicles from Garage2 loadpoint only, using original loadpoint index as unique identifier
+            # Collect vehicles from loadpoints, using original loadpoint index as unique identifier
             vehicles_list = []
             loadpoint_vehicles = {}
             
-            # First, collect all vehicles from Garage2 loadpoint with their actual data
+            # Collect all vehicles from loadpoints with dynamic data
             for lp_index, loadpoint in enumerate(all_loadpoints):
-                # Only process Garage2 loadpoint
-                if loadpoint.get('title') != 'Garage2':
-                    continue
-                    
                 if isinstance(loadpoint, dict):
                     vehicle_title = loadpoint.get('vehicleTitle', '')
                     vehicle_name = loadpoint.get('vehicleName', '')
@@ -1136,7 +1174,7 @@ class EVCCClient:
                                             f"SoC={vehicle_info['soc']}%, Range={vehicle_info['range']}km, "
                                             f"Connected={vehicle_info['connected']}, Charging={vehicle_info['charging']}")
             
-            self.logger.info(f"EVCC vehicles: {len(vehicles_list)} found from Garage2 loadpoint")
+            self.logger.info(f"EVCC vehicles: {len(vehicles_list)} found from loadpoints")
             return vehicles_list
                 
         except Exception as e:
@@ -1173,14 +1211,9 @@ class EVCCClient:
     def is_healthy(self) -> bool:
         """Check if EVCC is healthy and responding"""
         try:
-            url = f"{self.config.evcc_base_url}/api/health"
-            # Use retry for health check but with shorter timeout for faster failure detection
+            url = f"{self.config.evcc_base_url}/api/state"
             response = self._make_request_with_retry(url, max_retries=1)
-            
-            if response is None:
-                return False
-                
-            return response.status_code == 200 and response.text.strip() == "OK"
+            return response is not None and response.status_code == 200
         except Exception:
             return False
 

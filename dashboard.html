@@ -1767,6 +1767,9 @@
         // Update EVCC display
         function updateEVCCDisplay() {
             const container = document.getElementById('evcc-status');
+            const evccController = systemState.controllers?.evcc_controller;
+            const powerCalculation = evccController?.power_calculation || {};
+            const heatingLoadpointsPower = powerCalculation.heating_loadpoints_power || 0;
             
             if (!systemState.evcc) {
                 container.innerHTML = '<tr><td colspan="4" class="text-center">EVCC Daten nicht verfügbar</td></tr>';
@@ -1823,6 +1826,14 @@
                     class: 'warning',
                     status: systemState.evcc.house_consumption > 5 ? 'critical' : systemState.evcc.house_consumption > 3 ? 'warning' : 'good',
                     statusText: systemState.evcc.house_consumption > 5 ? 'Hoch' : systemState.evcc.house_consumption > 3 ? 'Normal' : 'Niedrig'
+                },
+                {
+                    name: 'Heizung Ladepunkte',
+                    value: (heatingLoadpointsPower / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: heatingLoadpointsPower > 0 ? 'warning' : 'positive',
+                    status: heatingLoadpointsPower > 0 ? 'good' : 'excellent',
+                    statusText: heatingLoadpointsPower > 0 ? 'Aktiv' : 'Inaktiv'
                 }
             ];
 
@@ -1852,15 +1863,29 @@
                 const isCharging = lp.charging || false;
                 const isConnected = lp.connected || false;
                 const isEnabled = lp.enabled || false;
+                const isHeatingLoadpoint = lp.chargerFeatureHeating === true;
                 const chargePower = (lp.chargePower || 0) / 1000;
                 const sessionEnergy = lp.sessionEnergy || 0;
                 const title = lp.title || `Ladepunkt ${index}`;
-                const vehicle = lp.vehicleTitle || lp.vehicle || '-';
+                const titleDisplay = isHeatingLoadpoint ? `${title} 🔥` : title;
+                const vehicle = isHeatingLoadpoint ? 'Heizung' : (lp.vehicleTitle || lp.vehicle || '-');
+                const sessionDisplay = isHeatingLoadpoint ? '-' : `${sessionEnergy.toFixed(1)} kWh`;
                 
                 let status = '⚫ Inaktiv';
                 let statusClass = 'warning';
                 
-                if (!isEnabled) {
+                if (isHeatingLoadpoint) {
+                    if (!isEnabled) {
+                        status = '🔒 Deaktiviert';
+                        statusClass = 'critical';
+                    } else if (chargePower > 0) {
+                        status = '🔥 Heizen';
+                        statusClass = 'good';
+                    } else {
+                        status = '⚪ Bereit';
+                        statusClass = 'warning';
+                    }
+                } else if (!isEnabled) {
                     status = '🔒 Deaktiviert';
                     statusClass = 'critical';
                 } else if (isCharging) {
@@ -1876,11 +1901,11 @@
 
                 return `
                     <tr>
-                        <td>${title}</td>
+                        <td>${titleDisplay}</td>
                         <td><span class="evcc-status ${statusClass}">${status}</span></td>
                         <td><span class="evcc-value ${chargePower > 0 ? 'positive' : ''}">${chargePower.toFixed(1)} kW</span></td>
                         <td>${vehicle}</td>
-                        <td>${sessionEnergy.toFixed(1)} kWh</td>
+                        <td>${sessionDisplay}</td>
                     </tr>
                 `;
             }).join('');

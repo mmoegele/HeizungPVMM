@@ -156,6 +156,19 @@ class HTTPService:
             
             return send_file(str(dashboard_path), mimetype='text/html')
         
+        @self.app.route('/dashboard_visual.html')
+        @self.app.route('/visual')
+        def serve_visual_dashboard():
+            """Serve visual web dashboard"""
+            current_dir = Path(__file__).parent
+            dashboard_path = current_dir / 'dashboard_visual.html'
+            
+            if not dashboard_path.exists():
+                self.logger.error(f"Visual dashboard file not found: {dashboard_path}")
+                return jsonify({'error': 'Visual dashboard not available'}), 404
+            
+            return send_file(str(dashboard_path), mimetype='text/html')
+        
         @self.app.route('/api/health')
         def health_check():
             """Health check endpoint"""
@@ -164,6 +177,79 @@ class HTTPService:
                 'uptime_seconds': (datetime.now() - self.start_time).total_seconds(),
                 'version': self.heating_system.config.system_version
             })
+        
+        @self.app.route('/api/status')
+        def get_status_alias():
+            """Get complete system status - simplified alias"""
+            try:
+                # Build status data directly
+                result = {
+                    'temperatures': {},
+                    'outputs': {},
+                    'inputs': {},
+                    'controllers': {},
+                    'evcc': {},
+                    'timestamp': datetime.now().isoformat(),
+                    'system_ok': True
+                }
+                
+                # Get temperatures
+                if self.heating_system.sensor_manager:
+                    try:
+                        result['temperatures'] = self.heating_system.sensor_manager.get_valid_temperatures()
+                    except Exception as e:
+                        self.logger.warning(f"Temperature error: {e}")
+                
+                # Get I/O states  
+                if self.heating_system.hardware:
+                    try:
+                        for board in [0, 1]:
+                            for pin in range(8):
+                                key = f"{board}-{pin}"
+                                result['outputs'][key] = self.heating_system.hardware.get_output(board, pin)
+                                result['inputs'][key] = self.heating_system.hardware.get_input(board, pin)
+                    except Exception as e:
+                        self.logger.warning(f"Hardware I/O error: {e}")
+                
+                # Get EVCC data if available
+                if hasattr(self.heating_system, 'evcc_controller') and self.heating_system.evcc_controller:
+                    try:
+                        evcc_state = self.heating_system.evcc_controller.get_state()
+                        result['evcc'] = evcc_state.get('evcc_data', {})
+                        result['controllers']['evcc_controller'] = evcc_state
+                    except Exception as e:
+                        self.logger.warning(f"EVCC error: {e}")
+                
+                return jsonify(result)
+                
+            except Exception as e:
+                self.logger.error(f"Error in status alias: {e}")
+                return jsonify({'error': 'Status temporarily unavailable'}), 500
+        
+        @self.app.route('/api/logs')  
+        def get_logs_alias():
+            """Get system logs - simplified alias"""
+            try:
+                logs = []
+                # Try to get recent log entries
+                import logging
+                
+                # Get the heating system logger
+                heating_logger = logging.getLogger('heating_system')
+                
+                # For now, return a simple response
+                result = {
+                    'logs': logs,
+                    'count': len(logs),
+                    'source': 'heating_system',
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                return jsonify(result)
+                
+            except Exception as e:
+                self.logger.error(f"Error in logs alias: {e}")
+                return jsonify({'logs': [], 'error': str(e)}), 500
         
         @self.app.route('/api/io/status')
         @self._require_auth

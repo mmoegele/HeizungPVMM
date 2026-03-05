@@ -1,0 +1,1849 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏠 Visual Heating System Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 1rem;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        .status-item {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 0.75rem 1.5rem;
+            border-radius: 25px;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .status-item:hover {
+            transform: translateY(-2px);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            color: #2d3748;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+
+        /* Temperature Display with Visual Indicators */
+        .temperature-grid {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .temperature-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            border-radius: 15px;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .temperature-item.cold {
+            background: linear-gradient(135deg, #74b9ff, #0984e3);
+            color: white;
+            border-color: #0984e3;
+        }
+
+        .temperature-item.optimal {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+            border-color: #00a085;
+        }
+
+        .temperature-item.warm {
+            background: linear-gradient(135deg, #fdcb6e, #f39c12);
+            color: white;
+            border-color: #f39c12;
+        }
+
+        .temperature-item.hot {
+            background: linear-gradient(135deg, #e17055, #d63031);
+            color: white;
+            border-color: #d63031;
+        }
+
+        .temperature-item.critical {
+            background: linear-gradient(135deg, #d63031, #a41e22);
+            color: white;
+            border-color: #a41e22;
+            animation: pulse-warning 2s infinite;
+        }
+
+        @keyframes pulse-warning {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        .temp-icon {
+            font-size: 2rem;
+            margin-right: 1rem;
+        }
+
+        .temp-info {
+            flex: 1;
+        }
+
+        .temp-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .temp-description {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .temp-value {
+            font-size: 2rem;
+            font-weight: bold;
+            text-align: right;
+        }
+
+        /* Mixer Controls with Directional Arrows */
+        .mixer-grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .mixer-item {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 15px;
+            padding: 1.5rem;
+            border: 2px solid #dee2e6;
+            transition: all 0.3s ease;
+        }
+
+        .mixer-item:hover {
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .mixer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .mixer-name {
+            font-weight: bold;
+            font-size: 1.2rem;
+            color: #2d3748;
+        }
+
+        .mixer-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .mixer-direction {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 12px;
+            justify-content: center;
+        }
+
+        .arrow {
+            font-size: 3rem;
+            transition: all 0.3s ease;
+        }
+
+        .arrow.up {
+            color: #00b894;
+            animation: bounce-up 2s infinite;
+        }
+
+        .arrow.down {
+            color: #e17055;
+            animation: bounce-down 2s infinite;
+        }
+
+        .arrow.neutral {
+            color: #74b9ff;
+        }
+
+        @keyframes bounce-up {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-8px); }
+            60% { transform: translateY(-4px); }
+        }
+
+        @keyframes bounce-down {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(8px); }
+            60% { transform: translateY(4px); }
+        }
+
+        .direction-text {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        /* Output States with Visual Icons */
+        .output-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .output-item {
+            padding: 1rem;
+            border-radius: 12px;
+            text-align: center;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .output-item.active {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+            border-color: #00a085;
+            box-shadow: 0 8px 20px rgba(0, 184, 148, 0.3);
+        }
+
+        .output-item.inactive {
+            background: linear-gradient(135deg, #74b9ff, #0984e3);
+            color: white;
+            border-color: #0984e3;
+        }
+
+        .output-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .output-name {
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+        }
+
+        .output-description {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        /* System Controllers with Status Indicators */
+        .controller-grid {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .controller-item {
+            display: flex;
+            align-items: center;
+            padding: 1.5rem;
+            border-radius: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .controller-item.running {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+        }
+
+        .controller-item.stopped {
+            background: linear-gradient(135deg, #6c757d, #5a6268);
+            color: white;
+        }
+
+        .controller-item.error {
+            background: linear-gradient(135deg, #e17055, #d63031);
+            color: white;
+            animation: pulse-error 2s infinite;
+        }
+
+        @keyframes pulse-error {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .controller-icon {
+            font-size: 2.5rem;
+            margin-right: 1rem;
+        }
+
+        .controller-info {
+            flex: 1;
+        }
+
+        .controller-name {
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .controller-status {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        /* EVCC Tables with Enhanced Styling */
+        .table-container {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .evcc-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .evcc-table thead {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .evcc-table th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .evcc-table td {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .evcc-table tbody tr:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .evcc-value {
+            font-weight: bold;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+        }
+
+        .evcc-value.positive {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+        }
+
+        .evcc-value.negative {
+            background: linear-gradient(135deg, #e17055, #d63031);
+            color: white;
+        }
+
+        .evcc-value.warning {
+            background: linear-gradient(135deg, #fdcb6e, #e17055);
+            color: white;
+        }
+
+        .evcc-status {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .evcc-status.excellent {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+        }
+
+        .evcc-status.good {
+            background: linear-gradient(135deg, #74b9ff, #0984e3);
+            color: white;
+        }
+
+        .evcc-status.warning {
+            background: linear-gradient(135deg, #fdcb6e, #e17055);
+            color: white;
+        }
+
+        .evcc-status.critical {
+            background: linear-gradient(135deg, #e17055, #d63031);
+            color: white;
+        }
+
+        /* Manual Mode Controls with Enhanced Design */
+        .manual-mode-container {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 15px;
+            padding: 2rem;
+            border: 2px solid #dee2e6;
+        }
+
+        .manual-mode-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            border: 2px solid transparent;
+        }
+
+        .status-indicator {
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border-radius: 25px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator.active {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+            animation: pulse-active 2s infinite;
+        }
+
+        .status-indicator.inactive {
+            background: linear-gradient(135deg, #6c757d, #5a6268);
+            color: white;
+        }
+
+        @keyframes pulse-active {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(0, 184, 148, 0); }
+        }
+
+        .remaining-time {
+            color: #2d3748;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .manual-mode-controls {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 1.5rem;
+            align-items: end;
+            margin-bottom: 1.5rem;
+        }
+
+        .duration-selector label {
+            display: block;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            color: #2d3748;
+            font-size: 1.1rem;
+        }
+
+        .duration-selector select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            background: white;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .duration-selector select:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            min-width: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #74b9ff, #0984e3);
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(116, 185, 255, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e17055, #d63031);
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(225, 112, 85, 0.4);
+        }
+
+        .heating-elements-status {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 2px solid #dee2e6;
+        }
+
+        .heating-elements-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .heating-element {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1rem;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .heating-element.active {
+            background: linear-gradient(135deg, #fdcb6e, #e17055);
+            color: white;
+            border-color: #e17055;
+            animation: heating-pulse 2s infinite;
+        }
+
+        .heating-element.inactive {
+            background: linear-gradient(135deg, #74b9ff, #0984e3);
+            color: white;
+            border-color: #0984e3;
+        }
+
+        @keyframes heating-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(253, 203, 110, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(253, 203, 110, 0); }
+        }
+
+        .heating-element-status {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .heating-element-name {
+            font-weight: 600;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        /* Logs with Enhanced Styling */
+        .logs-container {
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 15px;
+            padding: 1.5rem;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .logs-refresh {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .log-entry {
+            margin-bottom: 0.5rem;
+            padding: 0.5rem;
+            border-radius: 5px;
+            background: rgba(0, 255, 0, 0.1);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .status-bar {
+                gap: 1rem;
+            }
+            
+            .manual-mode-controls {
+                grid-template-columns: 1fr;
+            }
+            
+            .control-buttons {
+                flex-direction: column;
+            }
+            
+            .output-grid {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 0.5rem;
+            }
+            
+            .card {
+                padding: 1rem;
+            }
+            
+            .header {
+                padding: 1rem;
+            }
+            
+            .temp-value {
+                font-size: 1.5rem;
+            }
+            
+            .arrow {
+                font-size: 2rem;
+            }
+        }
+
+        /* Additional Visual Enhancements */
+        .glow {
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-muted {
+            opacity: 0.7;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header fade-in">
+            <h1>🏠 Visual Heating System Dashboard</h1>
+            <div class="status-bar">
+                <div class="status-item" id="last-update">Last Update: Loading...</div>
+                <div class="status-item" id="system-status">System: Initializing...</div>
+                <div class="status-item" id="connection-status">Connection: Connecting...</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card fade-in">
+                <h2>🌡️ Temperature Monitoring</h2>
+                <div class="temperature-grid" id="temperature-grid">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <h2>🔄 Mixer Controls</h2>
+                <div class="mixer-grid" id="mixer-grid">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card fade-in">
+                <h2>⚙️ System Controllers</h2>
+                <div class="controller-grid" id="controller-status-grid">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <h2>🔌 Control Outputs</h2>
+                <div class="output-grid" id="control-outputs">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card fade-in">
+                <h2>☀️ EVCC Solar & Battery</h2>
+                <div class="table-container">
+                    <table class="evcc-table" id="evcc-table">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Wert</th>
+                                <th>Einheit</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="evcc-status">
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <h2>🎛️ EVCC Manueller Modus</h2>
+                <div class="manual-mode-container">
+                    <div class="manual-mode-status" id="manual-mode-status">
+                        <div class="status-indicator" id="manual-mode-indicator">⚫ Inaktiv</div>
+                        <div class="remaining-time" id="manual-mode-time" style="display: none;">
+                            Verbleibend: <span id="remaining-minutes">--</span> Min
+                        </div>
+                    </div>
+                    
+                    <div class="manual-mode-controls">
+                        <div class="duration-selector">
+                            <label for="manual-duration">Dauer (Minuten):</label>
+                            <select id="manual-duration">
+                                <option value="5">5 Min</option>
+                                <option value="10">10 Min</option>
+                                <option value="15" selected>15 Min</option>
+                                <option value="30">30 Min</option>
+                                <option value="45">45 Min</option>
+                                <option value="60">60 Min</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-buttons">
+                            <button id="activate-manual" class="btn btn-primary" onclick="activateManualMode()">
+                                ▶️ Aktivieren
+                            </button>
+                            <button id="extend-manual" class="btn btn-secondary" onclick="extendManualMode()" disabled>
+                                ⏱️ Verlängern
+                            </button>
+                            <button id="deactivate-manual" class="btn btn-danger" onclick="deactivateManualMode()" disabled>
+                                ⏹️ Deaktivieren
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="heating-elements-status" id="heating-elements-status">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card fade-in">
+                <h2>🔌 EVCC Ladepunkte</h2>
+                <div class="table-container">
+                    <table class="evcc-table" id="loadpoints-table">
+                        <thead>
+                            <tr>
+                                <th>Ladepunkt</th>
+                                <th>Status</th>
+                                <th>Leistung</th>
+                                <th>Fahrzeug</th>
+                                <th>Session</th>
+                            </tr>
+                        </thead>
+                        <tbody id="loadpoints-status">
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <h2>🚗 EVCC Fahrzeuge</h2>
+                <div class="table-container">
+                    <table class="evcc-table" id="vehicles-table">
+                        <thead>
+                            <tr>
+                                <th>Fahrzeug</th>
+                                <th>Ladestand</th>
+                                <th>Reichweite</th>
+                                <th>Kapazität</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vehicles-status">
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card fade-in">
+                <h2>📊 Digital Inputs</h2>
+                <div class="output-grid" id="digital-inputs">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="card fade-in">
+                <h2>📋 System Logs</h2>
+                <div class="logs-container" id="system-logs">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        const API_KEY = localStorage.getItem('api_key') || '';
+        
+        // Update interval in milliseconds
+        const UPDATE_INTERVAL = 3000;
+
+        // State cache
+        let systemState = {
+            temperatures: {},
+            outputs: {},
+            inputs: {},
+            controllers: {},
+            evcc: {},
+            logs: []
+        };
+
+        // Temperature classification function
+        function getTemperatureClass(temp, type = 'general', targetTemp = null) {
+            if (temp === null || temp === undefined) return 'cold';
+            
+            // If we have a target temperature (for mixers), classify based on deviation
+            if (targetTemp !== null && targetTemp !== undefined) {
+                const deviation = Math.abs(temp - targetTemp);
+                
+                if (deviation <= 3) return 'optimal';      // ±3°C = green
+                if (deviation <= 10) return 'warm';        // ±10°C = yellow/orange  
+                if (deviation <= 15) return 'hot';         // ±15°C = orange
+                return 'critical';                         // >15°C = red
+            }
+            
+            // For other sensors, use neutral classification (green under 80°C)
+            if (temp < 80) return 'optimal';               // Under 80°C = green (neutral)
+            if (temp < 90) return 'warm';                  // 80-90°C = yellow
+            if (temp < 100) return 'hot';                  // 90-100°C = orange
+            return 'critical';                             // >100°C = red
+        }
+
+        // Get temperature icon based on class
+        function getTemperatureIcon(tempClass) {
+            const icons = {
+                cold: '🥶',
+                optimal: '✅',
+                warm: '🔥',
+                hot: '🌡️',
+                critical: '🚨'
+            };
+            return icons[tempClass] || '🌡️';
+        }
+
+        // Get mixer direction and arrow
+        function getMixerDirection(state) {
+            if (state === 'OPENING' || state === 'UP') {
+                return { arrow: '⬆️', class: 'up', text: 'Öffnet' };
+            } else if (state === 'CLOSING' || state === 'DOWN') {
+                return { arrow: '⬇️', class: 'down', text: 'Schließt' };
+            } else {
+                return { arrow: '⏸️', class: 'neutral', text: 'Stabil' };
+            }
+        }
+
+        // Get output icon based on type
+        function getOutputIcon(name, description) {
+            const lowerName = (name + ' ' + description).toLowerCase();
+            
+            if (lowerName.includes('heiz') || lowerName.includes('heat')) return '🔥';
+            if (lowerName.includes('pump') || lowerName.includes('pumpe')) return '💧';
+            if (lowerName.includes('valve') || lowerName.includes('ventil')) return '🔧';
+            if (lowerName.includes('motor') || lowerName.includes('motor')) return '⚡';
+            if (lowerName.includes('light') || lowerName.includes('licht')) return '💡';
+            
+            return '🔌';
+        }
+
+        // API Functions
+        async function fetchSystemData() {
+            try {
+                const response = await fetch(`${API_BASE}/system/full_status`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Debug logging to see what data we're receiving
+                    console.log('Received system data:', data);
+                    console.log('Temperature data:', data.temperatures);
+                    console.log('Controllers data:', data.controllers);
+                    
+                    // Update system state (same as original dashboard)
+                    systemState.temperatures = data.temperatures || {};
+                    systemState.outputs = data.digital_io?.outputs || {};
+                    systemState.inputs = data.digital_io?.inputs || {};
+                    systemState.controllers = data.controllers || {};
+                    systemState.evcc = data.evcc || { enabled: false, connected: false };
+                    
+                    document.getElementById('system-status').textContent = 'System: ' + (data.system_ok ? 'Online' : 'Offline');
+                    document.getElementById('connection-status').textContent = 'Connection: Active';
+                    
+                    return true;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Error fetching system data:', error);
+                document.getElementById('system-status').textContent = 'System: Error';
+                document.getElementById('connection-status').textContent = 'Connection: Failed';
+                return false;
+            }
+        }
+
+        async function fetchSystemLogs() {
+            try {
+                const response = await fetch(`${API_BASE}/system/logs`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    systemState.logs = data.logs || [];
+                    systemState.logsCount = data.count || 0;
+                    systemState.logsSource = data.source || 'system';
+                }
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+                systemState.logs = [];
+            }
+        }
+
+        // Update temperature display with visual indicators
+        function updateTemperatureDisplay() {
+            const container = document.getElementById('temperature-grid');
+            
+            if (!systemState.temperatures || Object.keys(systemState.temperatures).length === 0) {
+                container.innerHTML = '<div class="text-center text-muted">Keine Temperaturdaten verfügbar</div>';
+                return;
+            }
+
+            container.innerHTML = Object.entries(systemState.temperatures).map(([key, tempData]) => {
+                // Handle both simple number format and object format
+                let tempValue, sensorName, sensorDescription, sensorType;
+                
+                if (typeof tempData === 'number') {
+                    // Simple format: just the temperature value
+                    tempValue = tempData;
+                    sensorName = key;
+                    sensorDescription = '';
+                    sensorType = 'general';
+                } else if (typeof tempData === 'object' && tempData !== null) {
+                    // Object format: with value, name, description, type
+                    tempValue = tempData.value || tempData.temperature || tempData;
+                    sensorName = tempData.name || tempData.description || key;
+                    sensorDescription = tempData.description || '';
+                    sensorType = tempData.type || 'general';
+                } else {
+                    // Fallback
+                    tempValue = null;
+                    sensorName = key;
+                    sensorDescription = '';
+                    sensorType = 'general';
+                }
+                
+                // Check if this is a mixer temperature - find corresponding target temperature
+                let targetTemp = null;
+                if (key.includes('mischer') || sensorName.toLowerCase().includes('mixer')) {
+                    // Look for corresponding mixer controller to get target temperature
+                    const mixerControllers = Object.entries(systemState.controllers || {})
+                        .filter(([controllerKey, controller]) => {
+                            return controllerKey.startsWith('mixer_') || 
+                                   (controller.name && controller.name.toLowerCase().includes('mixer'));
+                        });
+                    
+                    // Try to match mixer by name/key
+                    for (const [controllerKey, controller] of mixerControllers) {
+                        if (key.includes(controllerKey.replace('mixer_', '')) || 
+                            controllerKey.includes(key.replace('mischer_', '')) ||
+                            (controller.mixer_id && key.includes(controller.mixer_id))) {
+                            targetTemp = controller.target_temperature;
+                            break;
+                        }
+                    }
+                }
+                
+                const tempClass = getTemperatureClass(tempValue, sensorType, targetTemp);
+                const icon = getTemperatureIcon(tempClass);
+                
+                // Add target temperature info for mixers
+                let tempInfo = `${tempValue !== null && tempValue !== undefined ? tempValue.toFixed(1) : '--'}°C`;
+                if (targetTemp !== null && targetTemp !== undefined) {
+                    const deviation = tempValue !== null ? (tempValue - targetTemp).toFixed(1) : '--';
+                    tempInfo += `<div style="font-size: 0.8rem; opacity: 0.8; margin-top: 0.2rem;">Ziel: ${targetTemp.toFixed(1)}°C (${deviation > 0 ? '+' : ''}${deviation}°C)</div>`;
+                }
+                
+                return `
+                    <div class="temperature-item ${tempClass}">
+                        <div class="temp-icon">${icon}</div>
+                        <div class="temp-info">
+                            <div class="temp-name">${sensorName}</div>
+                            <div class="temp-description">${sensorDescription}</div>
+                        </div>
+                        <div class="temp-value">${tempInfo}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Update mixer display with directional arrows
+        function updateMixerDisplay() {
+            const container = document.getElementById('mixer-grid');
+            
+            console.log('Looking for mixers in controllers:', systemState.controllers);
+            
+            // Define mixer outputs like in the original dashboard
+            const mixerOutputs = {
+                'mischer_1_auf': { board: 0, port: 1, description: 'Mixer 1 Open' },
+                'mischer_1_zu': { board: 0, port: 0, description: 'Mixer 1 Close' },
+                'mischer_2_auf': { board: 0, port: 4, description: 'Mixer 2 Open' },
+                'mischer_2_zu': { board: 0, port: 3, description: 'Mixer 2 Close' }
+            };
+            
+            // Look for mixer controllers first (like original dashboard)
+            let mixerControllers = [];
+            
+            if (systemState.controllers) {
+                mixerControllers = Object.entries(systemState.controllers)
+                    .filter(([key, controller]) => {
+                        return key.startsWith('mixer_') || key === 'mixer_manager';
+                    });
+            }
+            
+            console.log('Found mixer controllers:', mixerControllers);
+            
+            // If no mixer controllers found, create mixers based on outputs
+            if (mixerControllers.length === 0) {
+                // Group mixer outputs by mixer number
+                const mixers = {};
+                
+                for (const [outputKey, outputConfig] of Object.entries(mixerOutputs)) {
+                    const mixerNum = outputKey.includes('1') ? '1' : '2';
+                    const direction = outputKey.includes('auf') ? 'open' : 'close';
+                    
+                    if (!mixers[mixerNum]) {
+                        mixers[mixerNum] = { name: `Mixer ${mixerNum}`, open: false, close: false };
+                    }
+                    
+                    const outputState = systemState.outputs[`${outputConfig.board}-${outputConfig.port}`];
+                    if (outputState) {
+                        mixers[mixerNum][direction] = true;
+                    }
+                }
+                
+                // Create mixer display from outputs
+                if (Object.keys(mixers).length > 0) {
+                    container.innerHTML = Object.entries(mixers).map(([mixerNum, mixer]) => {
+                        let direction, directionClass, directionText;
+                        
+                        if (mixer.open && !mixer.close) {
+                            direction = '⬆️';
+                            directionClass = 'up';
+                            directionText = 'Öffnet';
+                        } else if (mixer.close && !mixer.open) {
+                            direction = '⬇️';
+                            directionClass = 'down';
+                            directionText = 'Schließt';
+                        } else {
+                            direction = '⏸️';
+                            directionClass = 'neutral';
+                            directionText = 'Stabil';
+                        }
+                        
+                        return `
+                            <div class="mixer-item">
+                                <div class="mixer-header">
+                                    <div class="mixer-name">${mixer.name}</div>
+                                    <div class="mixer-status">
+                                        <span class="controller-icon">🔄</span>
+                                    </div>
+                                </div>
+                                <div class="mixer-direction">
+                                    <div class="arrow ${directionClass}">${direction}</div>
+                                    <div class="direction-text">${directionText}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    return;
+                }
+                } else {
+                // Use mixer controllers if found
+                container.innerHTML = mixerControllers.map(([key, controller]) => {
+                    const direction = getMixerDirection(controller.state || controller.status || controller.last_action);
+                    
+                    // Get temperatures
+                    const currentTemp = (controller.current_temperature !== null && controller.current_temperature !== undefined) 
+                        ? controller.current_temperature.toFixed(1) : '--';
+                    const targetTemp = (controller.target_temperature !== null && controller.target_temperature !== undefined) 
+                        ? controller.target_temperature.toFixed(1) : '--';
+                    
+                    return `
+                        <div class="mixer-item">
+                            <div class="mixer-header">
+                                <div class="mixer-name">${controller.name || key}</div>
+                                <div class="mixer-status">
+                                    <span class="controller-icon">🔄</span>
+                                </div>
+                            </div>
+                            <div class="mixer-temperatures" style="display: flex; justify-content: space-between; margin: 0.5rem 0; padding: 0.5rem; background: rgba(255,255,255,0.5); border-radius: 8px;">
+                                <div style="text-align: center;">
+                                    <div style="font-size: 0.8rem; opacity: 0.8;">Aktuell</div>
+                                    <div style="font-weight: bold; font-size: 1.1rem;">${currentTemp}°C</div>
+                                </div>
+                                <div style="text-align: center;">
+                                    <div style="font-size: 0.8rem; opacity: 0.8;">Ziel</div>
+                                    <div style="font-weight: bold; font-size: 1.1rem;">${targetTemp}°C</div>
+                                </div>
+                            </div>
+                            <div class="mixer-direction">
+                                <div class="arrow ${direction.class}">${direction.arrow}</div>
+                                <div class="direction-text">${direction.text}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                return;
+            }
+
+            // If still no mixers found
+            const allControllers = Object.keys(systemState.controllers || {});
+            console.log('All available controllers:', allControllers);
+            console.log('Available outputs:', Object.keys(systemState.outputs || {}));
+            container.innerHTML = '<div class="text-center text-muted">Keine Mischer gefunden</div>';
+        }
+
+        // Update output display with enhanced visuals
+        function updateOutputDisplay() {
+            const container = document.getElementById('control-outputs');
+            
+            // Define output configuration like in original dashboard
+            const OUTPUT_CONFIG = {
+                'puffer_lade_pumpe': { board: 0, port: 6, description: 'Buffer Charging Pump' },
+                'mischer_1_auf': { board: 0, port: 1, description: 'Mixer 1 Open' },
+                'mischer_1_zu': { board: 0, port: 0, description: 'Mixer 1 Close' },
+                'mischer_2_auf': { board: 0, port: 4, description: 'Mixer 2 Open' },
+                'mischer_2_zu': { board: 0, port: 3, description: 'Mixer 2 Close' },
+                'wt_pumpe': { board: 1, port: 7, description: 'Heat Exchanger Pump' },
+                'bhkw_start': { board: 0, port: 5, description: 'BHKW Start Signal' },
+                'heizstab_1': { board: 1, port: 0, description: 'Heating Element 1' },
+                'heizstab_2': { board: 1, port: 1, description: 'Heating Element 2' },
+                'heizstab_3': { board: 1, port: 2, description: 'Heating Element 3' }
+            };
+            
+            if (!systemState.outputs || Object.keys(systemState.outputs).length === 0) {
+                container.innerHTML = '<div class="text-center text-muted">Keine Ausgangsdaten verfügbar</div>';
+                return;
+            }
+
+            container.innerHTML = Object.entries(OUTPUT_CONFIG).map(([outputId, config]) => {
+                const outputKey = `${config.board}-${config.port}`;
+                const isActive = systemState.outputs[outputKey] === true || systemState.outputs[outputKey] === 1;
+                const icon = getOutputIcon(outputId, config.description);
+                
+                return `
+                    <div class="output-item ${isActive ? 'active' : 'inactive'}">
+                        <span class="output-icon">${icon}</span>
+                        <div class="output-name">${config.description}</div>
+                        <div class="output-description">(${config.board}-${config.port})</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Update input display
+        function updateInputDisplay() {
+            const container = document.getElementById('digital-inputs');
+            
+            // Define input configuration like in original dashboard
+            const INPUT_CONFIG = {
+                'bhkw_running_status': { board: 0, port: 0, description: 'BHKW Running Status' }
+            };
+            
+            if (!systemState.inputs || Object.keys(systemState.inputs).length === 0) {
+                container.innerHTML = '<div class="text-center text-muted">Keine Eingangsdaten verfügbar</div>';
+                return;
+            }
+
+            container.innerHTML = Object.entries(INPUT_CONFIG).map(([inputId, config]) => {
+                const inputKey = `${config.board}-${config.port}`;
+                const isActive = systemState.inputs[inputKey] === true || systemState.inputs[inputKey] === 1;
+                
+                return `
+                    <div class="output-item ${isActive ? 'active' : 'inactive'}">
+                        <span class="output-icon">📊</span>
+                        <div class="output-name">${config.description}</div>
+                        <div class="output-description">(${config.board}-${config.port})</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Update controller display with enhanced status indicators
+        function updateControllerDisplay() {
+            const container = document.getElementById('controller-status-grid');
+            
+            if (!systemState.controllers || Object.keys(systemState.controllers).length === 0) {
+                container.innerHTML = '<div class="text-center text-muted">Keine Controller-Daten verfügbar</div>';
+                return;
+            }
+
+            container.innerHTML = Object.entries(systemState.controllers).map(([controllerId, status]) => {
+                if (controllerId === 'mixer_manager') {
+                    return ''; // Skip mixer_manager like original dashboard
+                }
+                
+                let statusClass = 'stopped';
+                let icon = '⚙️';
+                let displayName = status.name || controllerId.replace(/_/g, ' ').toUpperCase();
+                let statusText = 'Gestoppt';
+                
+                // Set specific display names for better readability (same as original)
+                if (controllerId === 'system_data_reporter') {
+                    displayName = '📊 System Data Reporter';
+                } else if (controllerId === 'evcc_controller') {
+                    displayName = '☀️ EVCC Controller';
+                }
+                
+                // Determine status class and icon (same logic as original)
+                if (status.error || status.thread_healthy === false) {
+                    statusClass = 'error';
+                    icon = '❌';
+                    statusText = status.error || 'Error';
+                } else if (status.thread_healthy === true || (status.pump_active || status.active_mixers?.length > 0)) {
+                    statusClass = 'running';
+                    icon = '✅';
+                    statusText = 'Läuft';
+                } else if (status.enabled && status.running) {
+                    statusClass = 'running';
+                    icon = '✅';
+                    statusText = 'Läuft';
+                } else {
+                    statusClass = 'stopped';
+                    icon = '⏸️';
+                    statusText = status.status || 'Gestoppt';
+                }
+                
+                // Create detailed status info based on controller type (same as original)
+                let details = '';
+                if (controllerId === 'heat_exchanger') {
+                    const bhkwIcon = status.bhkw_active ? '🔌' : '⭕';
+                    const modeText = status.operation_mode === 'bhkw_inactive' ? 'BHKW Inactive' : status.operation_mode || 'Unknown';
+                    details = `
+                        Pumpe: ${status.pump_active ? 'AN' : 'AUS'} | 
+                        BHKW: ${bhkwIcon} ${status.bhkw_active ? 'Aktiv' : 'Inaktiv'} |
+                        Temp: ${status.last_temperature !== null && status.last_temperature !== undefined ? status.last_temperature.toFixed(1) + '°C' : 'N/A'} |
+                        Modus: ${modeText}
+                    `;
+                } else if (controllerId.startsWith('mixer_') && controllerId !== 'mixer_manager') {
+                    const currentTemp = (status.current_temperature !== null && status.current_temperature !== undefined) 
+                        ? status.current_temperature.toFixed(1) + '°C' : 'N/A';
+                    const targetTemp = (status.target_temperature !== null && status.target_temperature !== undefined) 
+                        ? status.target_temperature.toFixed(1) + '°C' : 'N/A';
+                    const lastAction = status.last_action || 'none';
+                    let actionIcon = '⏸️';
+                    if (lastAction.includes('open') || lastAction.includes('auf') || lastAction.includes('warming')) {
+                        actionIcon = '↑';
+                    } else if (lastAction.includes('close') || lastAction.includes('zu') || lastAction.includes('cooling')) {
+                        actionIcon = '↓';
+                    }
+                    details = `${actionIcon} Aktuell: ${currentTemp} | Ziel: ${targetTemp}`;
+                } else if (controllerId === 'evcc_controller') {
+                    // EVCC controller details
+                    details = status.status || 'EVCC Integration';
+                }
+                
+                return `
+                    <div class="controller-item ${statusClass}">
+                        <div class="controller-icon">${icon}</div>
+                        <div class="controller-info">
+                            <div class="controller-name">${displayName}</div>
+                            <div class="controller-status">${statusText}</div>
+                            ${details ? `<div class="controller-details" style="font-size: 0.85em; opacity: 0.9; margin-top: 0.25rem;">${details}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).filter(html => html !== '').join('');
+        }
+
+        // Update EVCC display
+        function updateEVCCDisplay() {
+            const container = document.getElementById('evcc-status');
+            const evccController = systemState.controllers?.evcc_controller;
+            const powerCalculation = evccController?.power_calculation || {};
+            const heatingLoadpointsPower = powerCalculation.heating_loadpoints_power || 0;
+            
+            if (!systemState.evcc || Object.keys(systemState.evcc).length === 0) {
+                container.innerHTML = '<tr><td colspan="4" class="text-center">Keine EVCC-Daten verfügbar</td></tr>';
+                return;
+            }
+
+            const evccData = [
+                {
+                    name: 'Solarleistung',
+                    value: (systemState.evcc.solar_power / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: systemState.evcc.solar_power > 0 ? 'positive' : 'warning',
+                    status: systemState.evcc.solar_power > 3 ? 'excellent' : systemState.evcc.solar_power > 1 ? 'good' : 'warning',
+                    statusText: systemState.evcc.solar_power > 3 ? 'Hoch' : systemState.evcc.solar_power > 1 ? 'Mittel' : 'Niedrig'
+                },
+                {
+                    name: 'Batterie SoC',
+                    value: systemState.evcc.battery_soc?.toFixed(0) || '--',
+                    unit: '%',
+                    class: systemState.evcc.battery_soc > 80 ? 'positive' : systemState.evcc.battery_soc > 50 ? 'warning' : 'negative',
+                    status: systemState.evcc.battery_soc > 80 ? 'excellent' : systemState.evcc.battery_soc > 50 ? 'good' : 'warning',
+                    statusText: systemState.evcc.battery_soc > 80 ? 'Voll' : systemState.evcc.battery_soc > 50 ? 'Mittel' : 'Niedrig'
+                },
+                {
+                    name: 'Netzleistung',
+                    value: (systemState.evcc.grid_power / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: systemState.evcc.grid_power > 0 ? 'negative' : 'positive',
+                    status: Math.abs(systemState.evcc.grid_power) > 5 ? 'warning' : 'good',
+                    statusText: systemState.evcc.grid_power > 0 ? 'Bezug' : 'Einspeisung'
+                },
+                {
+                    name: 'Überschuss',
+                    value: (systemState.evcc.surplus_power / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: systemState.evcc.surplus_power > 0 ? 'positive' : 'negative',
+                    status: systemState.evcc.surplus_power > 2 ? 'excellent' : systemState.evcc.surplus_power > 0 ? 'good' : 'warning',
+                    statusText: systemState.evcc.surplus_power > 2 ? 'Hoch' : systemState.evcc.surplus_power > 0 ? 'Vorhanden' : 'Kein Überschuss'
+                },
+                {
+                    name: 'Heizung Ladepunkte',
+                    value: (heatingLoadpointsPower / 1000).toFixed(1),
+                    unit: 'kW',
+                    class: heatingLoadpointsPower > 0 ? 'warning' : 'positive',
+                    status: heatingLoadpointsPower > 0 ? 'good' : 'excellent',
+                    statusText: heatingLoadpointsPower > 0 ? 'Aktiv' : 'Inaktiv'
+                }
+            ];
+
+            container.innerHTML = evccData.map(item => `
+                <tr>
+                    <td>${item.name}</td>
+                    <td><span class="evcc-value ${item.class}">${item.value}</span></td>
+                    <td>${item.unit}</td>
+                    <td><span class="evcc-status ${item.status}">${item.statusText}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        // Update EVCC Loadpoints display
+        function updateLoadpointsDisplay() {
+            const container = document.getElementById('loadpoints-status');
+            
+            const evccController = systemState.controllers?.evcc_controller;
+            const loadpointsData = evccController?.loadpoints || systemState.evcc?.loadpoints;
+            
+            if (!loadpointsData || !Array.isArray(loadpointsData) || loadpointsData.length === 0) {
+                container.innerHTML = '<tr><td colspan="5" class="text-center">Keine Ladepunkte verfügbar</td></tr>';
+                return;
+            }
+
+            container.innerHTML = loadpointsData.map((lp, index) => {
+                const isCharging = lp.charging || false;
+                const isConnected = lp.connected || false;
+                const isEnabled = lp.enabled || false;
+                const isHeatingLoadpoint = lp.chargerFeatureHeating === true;
+                const chargePower = (lp.chargePower || 0) / 1000;
+                const sessionEnergy = lp.sessionEnergy || 0;
+                const title = lp.title || `Ladepunkt ${index}`;
+                const titleDisplay = isHeatingLoadpoint ? `${title} 🔥` : title;
+                const vehicle = isHeatingLoadpoint ? 'Heizung' : (lp.vehicleTitle || lp.vehicle || '-');
+                const sessionDisplay = isHeatingLoadpoint ? '-' : `${sessionEnergy.toFixed(1)} kWh`;
+                
+                let status = '⚫ Inaktiv';
+                let statusClass = 'warning';
+                
+                if (isHeatingLoadpoint) {
+                    if (!isEnabled) {
+                        status = '🔒 Deaktiviert';
+                        statusClass = 'critical';
+                    } else if (chargePower > 0) {
+                        status = '🔥 Heizen';
+                        statusClass = 'good';
+                    } else {
+                        status = '⚪ Bereit';
+                        statusClass = 'warning';
+                    }
+                } else if (!isEnabled) {
+                    status = '🔒 Deaktiviert';
+                    statusClass = 'critical';
+                } else if (isCharging) {
+                    status = '🔋 Lädt';
+                    statusClass = 'excellent';
+                } else if (isConnected) {
+                    status = '🔌 Verbunden';
+                    statusClass = 'good';
+                } else {
+                    status = '⚪ Bereit';
+                    statusClass = 'warning';
+                }
+
+                return `
+                    <tr>
+                        <td>${titleDisplay}</td>
+                        <td><span class="evcc-status ${statusClass}">${status}</span></td>
+                        <td><span class="evcc-value ${chargePower > 0 ? 'positive' : ''}">${chargePower.toFixed(1)} kW</span></td>
+                        <td>${vehicle}</td>
+                        <td>${sessionDisplay}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Update EVCC Vehicles display  
+        function updateVehiclesDisplay() {
+            const container = document.getElementById('vehicles-status');
+            
+            const evccController = systemState.controllers?.evcc_controller;
+            const vehiclesData = evccController?.vehicles || systemState.evcc?.vehicles;
+            
+            if (!vehiclesData || !Array.isArray(vehiclesData) || vehiclesData.length === 0) {
+                container.innerHTML = '<tr><td colspan="5" class="text-center">Keine Fahrzeuge konfiguriert</td></tr>';
+                return;
+            }
+
+            container.innerHTML = vehiclesData.map((vehicle, index) => {
+                const soc = vehicle.soc || 0;
+                const range = vehicle.range || 0;
+                const capacity = vehicle.capacity || 0;
+                const title = vehicle.title || `Fahrzeug ${index + 1}`;
+                const loadpointTitle = vehicle.loadpoint_title || `LP${(vehicle.loadpoint || 0) + 1}`;
+                const connected = vehicle.connected || false;
+                const charging = vehicle.charging || false;
+                
+                let socClass = 'warning';
+                let statusText = 'Normal';
+                let statusClass = 'good';
+                
+                if (charging) {
+                    statusText = 'Lädt';
+                    statusClass = 'excellent';
+                    socClass = 'positive';
+                } else if (connected) {
+                    statusText = 'Verbunden';
+                    statusClass = 'good';
+                    if (soc > 80) {
+                        socClass = 'positive';
+                        statusText = 'Voll';
+                    } else if (soc > 50) {
+                        socClass = 'positive';
+                    } else if (soc > 20) {
+                        socClass = 'warning';
+                    } else {
+                        socClass = 'negative';
+                    }
+                } else {
+                    if (soc > 80) {
+                        socClass = 'positive';
+                        statusText = 'Voll';
+                        statusClass = 'excellent';
+                    } else if (soc > 50) {
+                        socClass = 'positive';
+                        statusText = 'Gut';
+                        statusClass = 'good';
+                    } else if (soc > 20) {
+                        socClass = 'warning';
+                        statusText = 'Niedrig';
+                        statusClass = 'warning';
+                    } else if (soc > 0) {
+                        socClass = 'negative';
+                        statusText = 'Kritisch';
+                        statusClass = 'critical';
+                    } else {
+                        socClass = 'neutral';
+                        statusText = 'Getrennt';
+                        statusClass = 'neutral';
+                    }
+                }
+
+                return `
+                    <tr>
+                        <td>${title}<br><small class="text-muted">${loadpointTitle}</small></td>
+                        <td><span class="evcc-value ${socClass}">${soc.toFixed(0)}%</span></td>
+                        <td>${range.toFixed(0)} km</td>
+                        <td>${capacity.toFixed(1)} kWh</td>
+                        <td><span class="evcc-status ${statusClass}">${statusText}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Manual Mode Functions (same as original dashboard)
+        async function activateManualMode() {
+            const duration = parseInt(document.getElementById('manual-duration').value);
+            
+            try {
+                const response = await fetch('/api/evcc/manual-mode/activate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({ duration_minutes: duration })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log('Manual mode activated:', result);
+                    await updateManualModeDisplay();
+                } else {
+                    console.error('Failed to activate manual mode:', result);
+                    alert('Fehler beim Aktivieren des manuellen Modus: ' + (result.error || 'Unbekannter Fehler'));
+                }
+            } catch (error) {
+                console.error('Error activating manual mode:', error);
+                alert('Fehler beim Aktivieren des manuellen Modus: Verbindungsfehler');
+            }
+        }
+
+        async function deactivateManualMode() {
+            try {
+                const response = await fetch('/api/evcc/manual-mode/deactivate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    }
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log('Manual mode deactivated:', result);
+                    await updateManualModeDisplay();
+                } else {
+                    console.error('Failed to deactivate manual mode:', result);
+                    alert('Fehler beim Deaktivieren des manuellen Modus: ' + (result.error || 'Unbekannter Fehler'));
+                }
+            } catch (error) {
+                console.error('Error deactivating manual mode:', error);
+                alert('Fehler beim Deaktivieren des manuellen Modus: Verbindungsfehler');
+            }
+        }
+
+        async function extendManualMode() {
+            const additionalMinutes = parseInt(document.getElementById('manual-duration').value);
+            
+            try {
+                const response = await fetch('/api/evcc/manual-mode/extend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': API_KEY
+                    },
+                    body: JSON.stringify({ additional_minutes: additionalMinutes })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    console.log('Manual mode extended:', result);
+                    await updateManualModeDisplay();
+                } else {
+                    console.error('Failed to extend manual mode:', result);
+                    alert('Fehler beim Verlängern des manuellen Modus: ' + (result.error || 'Unbekannter Fehler'));
+                }
+            } catch (error) {
+                console.error('Error extending manual mode:', error);
+                alert('Fehler beim Verlängern des manuellen Modus: Verbindungsfehler');
+            }
+        }
+
+        async function fetchManualModeStatus() {
+            try {
+                const response = await fetch('/api/evcc/manual-mode/status', {
+                    headers: {
+                        'X-API-Key': API_KEY
+                    }
+                });
+
+                if (response.ok) {
+                    const status = await response.json();
+                    return status;
+                } else {
+                    console.error('Failed to fetch manual mode status:', response.status);
+                    return null;
+                }
+            } catch (error) {
+                console.error('Error fetching manual mode status:', error);
+                return null;
+            }
+        }
+
+        async function updateManualModeDisplay() {
+            const status = await fetchManualModeStatus();
+            
+            if (!status) {
+                console.warn('Could not fetch manual mode status');
+                return;
+            }
+
+            // Update status indicator
+            const indicator = document.getElementById('manual-mode-indicator');
+            const timeDisplay = document.getElementById('manual-mode-time');
+            const remainingMinutes = document.getElementById('remaining-minutes');
+            
+            // Update buttons
+            const activateBtn = document.getElementById('activate-manual');
+            const extendBtn = document.getElementById('extend-manual');
+            const deactivateBtn = document.getElementById('deactivate-manual');
+            
+            if (status.is_active) {
+                indicator.textContent = '🟢 Aktiv';
+                indicator.className = 'status-indicator active';
+                
+                timeDisplay.style.display = 'block';
+                remainingMinutes.textContent = Math.ceil(status.remaining_minutes || 0);
+                
+                activateBtn.disabled = true;
+                extendBtn.disabled = false;
+                deactivateBtn.disabled = false;
+            } else {
+                indicator.textContent = '⚫ Inaktiv';
+                indicator.className = 'status-indicator inactive';
+                
+                timeDisplay.style.display = 'none';
+                
+                activateBtn.disabled = false;
+                extendBtn.disabled = true;
+                deactivateBtn.disabled = true;
+            }
+            
+            // Update heating elements display
+            updateHeatingElementsDisplay(status.heating_elements_status || {});
+        }
+
+        function updateHeatingElementsDisplay(elementsStatus) {
+            const container = document.getElementById('heating-elements-status');
+            
+            if (!elementsStatus || Object.keys(elementsStatus).length === 0) {
+                container.innerHTML = '<div class="text-muted text-center">Keine Heizstab-Informationen verfügbar</div>';
+                return;
+            }
+            
+            const elementsHtml = Object.entries(elementsStatus).map(([name, isActive]) => `
+                <div class="heating-element ${isActive ? 'active' : 'inactive'}">
+                    <span class="heating-element-status">${isActive ? '🔥' : '❄️'}</span>
+                    <span class="heating-element-name">${name}</span>
+                </div>
+            `).join('');
+            
+            container.innerHTML = `
+                <div style="margin-bottom: 1rem; font-weight: 600; color: #2d3748; text-align: center;">
+                    Heizstäbe Status:
+                </div>
+                <div class="heating-elements-grid">
+                    ${elementsHtml}
+                </div>
+            `;
+        }
+
+        // Update logs display
+        function updateLogsDisplay() {
+            const container = document.getElementById('system-logs');
+            
+            const header = document.createElement('div');
+            header.className = 'logs-header';
+            header.innerHTML = `
+                <div class="logs-count">
+                    ${systemState.logsCount || systemState.logs.length} log entries
+                    ${systemState.logsSource ? `(${systemState.logsSource})` : ''}
+                </div>
+                <button class="logs-refresh" onclick="refreshLogs()">Refresh</button>
+            `;
+            
+            container.innerHTML = '';
+            container.appendChild(header);
+            
+            if (!systemState.logs || systemState.logs.length === 0) {
+                const noLogs = document.createElement('div');
+                noLogs.className = 'log-entry';
+                noLogs.innerHTML = '<div class="log-message">No system logs available</div>';
+                container.appendChild(noLogs);
+                return;
+            }
+            
+            const reversedLogs = [...systemState.logs].reverse();
+            
+            for (const logEntry of reversedLogs.slice(0, 20)) { // Limit to 20 entries for performance
+                const logElement = document.createElement('div');
+                logElement.className = 'log-entry';
+                
+                const timestamp = logEntry.timestamp ? new Date(logEntry.timestamp).toLocaleTimeString() : '';
+                const level = logEntry.level || 'INFO';
+                const message = logEntry.message || logEntry.msg || String(logEntry);
+                
+                logElement.innerHTML = `<span style="color: #00ccff;">[${timestamp}]</span> <span style="color: #ffcc00;">${level}:</span> ${message}`;
+                container.appendChild(logElement);
+            }
+            
+            container.scrollTop = 0;
+        }
+
+        // Refresh logs manually
+        async function refreshLogs() {
+            await fetchSystemLogs();
+            updateLogsDisplay();
+        }
+
+        // Main update function
+        async function updateDashboard() {
+            const systemSuccess = await fetchSystemData();
+            
+            if (systemSuccess) {
+                updateTemperatureDisplay();
+                updateMixerDisplay();
+                updateOutputDisplay();
+                updateInputDisplay();
+                updateControllerDisplay();
+                updateEVCCDisplay();
+                updateLoadpointsDisplay();
+                updateVehiclesDisplay();
+                updateManualModeDisplay();
+            }
+            
+            await fetchSystemLogs();
+            updateLogsDisplay();
+
+            document.getElementById('last-update').textContent = 
+                'Last Update: ' + new Date().toLocaleTimeString();
+        }
+
+        // Initialize dashboard
+        async function initialize() {
+            console.log('Initializing visual heating system dashboard...');
+            await updateDashboard();
+            setInterval(updateDashboard, UPDATE_INTERVAL);
+        }
+
+        // Start the dashboard when page loads
+        document.addEventListener('DOMContentLoaded', initialize);
+    </script>
+</body>
+</html>
