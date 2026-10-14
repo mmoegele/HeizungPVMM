@@ -9,6 +9,7 @@ Designed to be integrated with the main heating system controller.
 
 import logging
 import threading
+import time
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
@@ -76,8 +77,21 @@ class HTTPService:
             self.logger.info("Rate limiting disabled")
             self.limiter = None
         
+        # EVCC Charger API state (for HTTP plugin integration)
+        self._evcc_charger_enabled = False
+        self._evcc_charger_max_current = 0  # Amps, set by EVCC via maxcurrent
+        self._evcc_charger_max_power = 0    # Watts, set by EVCC via setmaxpower (preferred for heating)
+        self._evcc_last_contact = 0.0       # monotonic timestamp of last EVCC API call
+        self._evcc_watchdog_timeout = 300   # 5 minutes in seconds
+        
         # Set up routes and error handlers
         self._setup_routes()
+        
+        # Start EVCC watchdog thread
+        self._evcc_watchdog_thread = threading.Thread(
+            target=self._evcc_watchdog_loop, daemon=True, name='evcc-watchdog'
+        )
+        self._evcc_watchdog_thread.start()
         self._setup_error_handlers()
         
         # Initialize server thread
@@ -867,7 +881,12 @@ class HTTPService:
             """Get current manual mode status"""
             try:
                 if not hasattr(self.heating_system, 'evcc_controller') or not self.heating_system.evcc_controller:
-                    return jsonify({'error': 'EVCC controller not available'}), 503
+                    # Old EVCC controller disabled — return inactive status
+                    return jsonify({
+                        'active': False,
+                        'mode': 'evcc_charger_api',
+                        'message': 'Heating controlled by EVCC charger API'
+                    })
                 
                 # Use the dedicated manual mode status method
                 status = self.heating_system.evcc_controller.get_manual_mode_status()
@@ -877,6 +896,248 @@ class HTTPService:
             except Exception as e:
                 self.logger.error(f"Error getting manual mode status: {e}")
                 return jsonify({'error': str(e)}), 500
+        
+        # ============================================================
+        # EVCC Charger HTTP Plugin Interface
+        # ============================================================
+        # These endpoints allow EVCC to control the heating elements
+        # as a custom charger/loadpoint via the HTTP plugin.
+        # EVCC becomes the controller and calls these endpoints.
+        # ============================================================
+        
+        HEIZSTAB_PORTS = [
+            {'board': 1, 'port': 0, 'name': 'heizstab_1'},
+            {'board': 1, 'port': 1, 'name': 'heizstab_2'},
+            {'board': 1, 'port': 2, 'name': 'heizstab_3'},
+        ]
+        
+        def _charger_get_element_power():
+            """Get configured power per heating element in W"""
+            try:
+                return self.heating_system.config.evcc.heating_element_power
+            except Exception:
+                return 2000.0
+        
+        def _charger_get_active_count():
+            """Count currently active heating elements"""
+            if not self.heating_system.hardware:
+                return 0
+            count = 0
+            for p in HEIZSTAB_PORTS:
+                try:
+                    if self.heating_system.hardware.get_output(p['board'], p['port']):
+                        count += 1
+                except Exception:
+                    pass
+            return count
+        
+        def _charger_apply_elements(desired_count):
+            """Activate exactly desired_count heating elements (0-3)"""
+            if not self.heating_system.hardware:
+                self.logger.error("EVCC Charger: Hardware not available")
+                return
+            desired_count = max(0, min(len(HEIZSTAB_PORTS), desired_count))
+            for i, p in enumerate(HEIZSTAB_PORTS):
+                try:
+                    self.heating_system.hardware.set_output(
+                        (p['board'], p['port']), i < desired_count
+                    )
+                except Exception as e:
+                    self.logger.error(f"EVCC Charger: Error setting {p['name']}: {e}")
+            self.logger.info(f"EVCC Charger: Set {desired_count} heating elements active")
+        
+        def _charger_update():
+            """Apply heating element changes based on current charger state.
+            
+            Priority: setmaxpower (Watts) > maxcurrent (Amps converted to Watts).
+            EVCC uses setmaxpower for heating devices.
+            """
+            if not self._evcc_charger_enabled:
+                _charger_apply_elements(0)
+                return
+            element_power = _charger_get_element_power()
+            # setmaxpower takes priority (direct Watts from EVCC)
+            if self._evcc_charger_max_power > 0:
+                desired = min(len(HEIZSTAB_PORTS), int(self._evcc_charger_max_power / element_power))
+            else:
+                # Fallback to maxcurrent: each element is on a separate phase
+                # so total power = maxcurrent * 230V * 3 phases
+                max_power = self._evcc_charger_max_current * 230 * len(HEIZSTAB_PORTS)
+                desired = min(len(HEIZSTAB_PORTS), int(max_power / element_power))
+            _charger_apply_elements(desired)
+        
+        def _charger_get_buffer_temp():
+            """Get buffer temperature for EVCC display"""
+            if not self.heating_system.sensor_manager:
+                return None
+            try:
+                temps = self.heating_system.sensor_manager.get_valid_temperatures()
+                # Use configured sensor, with fallbacks
+                configured_sensor = getattr(
+                    self.heating_system.config.evcc, 'charger_api_temp_sensor', 'puffer_k_mitte'
+                )
+                for sensor in [configured_sensor, 'puffer_k_mitte', 'puffer_m_mitte']:
+                    if sensor in temps:
+                        return temps[sensor]
+            except Exception:
+                pass
+            return None
+        
+        # --- Read endpoints (EVCC reads these via HTTP GET) ---
+        
+        @self.app.route('/api/evcc/charger/status')
+        def evcc_charger_get_status():
+            """Charger status: B=connected/idle, C=charging/heating"""
+            self._evcc_last_contact = time.monotonic()
+            active = _charger_get_active_count()
+            status = "C" if self._evcc_charger_enabled and active > 0 else "B"
+            return jsonify({"status": status})
+        
+        @self.app.route('/api/evcc/charger/enabled')
+        def evcc_charger_get_enabled():
+            """Is charging/heating currently enabled?"""
+            self._evcc_last_contact = time.monotonic()
+            return jsonify({"enabled": self._evcc_charger_enabled})
+        
+        @self.app.route('/api/evcc/charger/power')
+        def evcc_charger_get_power():
+            """Current heating power in W"""
+            self._evcc_last_contact = time.monotonic()
+            power = _charger_get_active_count() * _charger_get_element_power()
+            return jsonify({"power": power})
+        
+        @self.app.route('/api/evcc/charger/temp')
+        def evcc_charger_get_temp():
+            """Current buffer temperature in °C"""
+            temp = _charger_get_buffer_temp()
+            return jsonify({"temp": temp if temp is not None else 0})
+        
+        @self.app.route('/api/evcc/charger/templimit')
+        def evcc_charger_get_templimit():
+            """Temperature limit in °C"""
+            try:
+                limit = int(self.heating_system.config.safety.max_temperature)
+            except Exception:
+                limit = 85
+            return jsonify({"templimit": limit})
+        
+        @self.app.route('/api/evcc/charger/maxpower')
+        def evcc_charger_get_maxpower():
+            """Maximum possible heating power in W"""
+            max_power = len(HEIZSTAB_PORTS) * _charger_get_element_power()
+            return jsonify({"maxpower": max_power})
+        
+        # --- Write endpoints (EVCC controls heating via these) ---
+        # EVCC HTTP plugin sends plain text body (e.g. "true", "16", "4000")
+        # or uses GET with template variables in URL.
+        
+        def _parse_body_bool():
+            """Parse boolean from EVCC HTTP plugin body (plain text or JSON)"""
+            data = request.get_json(silent=True)
+            if data is not None:
+                val = data.get('enable', data.get('value', False))
+                return str(val).lower() in ('true', '1', 'on')
+            raw = request.get_data(as_text=True).strip().lower()
+            return raw in ('true', '1', 'on')
+        
+        def _parse_body_int():
+            """Parse integer from EVCC HTTP plugin body (plain text or JSON)"""
+            data = request.get_json(silent=True)
+            if data is not None:
+                return int(data.get('maxcurrent', data.get('maxpower', data.get('value', 0))))
+            raw = request.get_data(as_text=True).strip()
+            try:
+                return int(float(raw))
+            except (ValueError, TypeError):
+                return 0
+        
+        @self.app.route('/api/evcc/charger/enable/<state>')
+        def evcc_charger_set_enable_get(state):
+            """Enable/disable heating. EVCC GET: /enable/true or /enable/false"""
+            self._evcc_charger_enabled = state.lower() in ('true', '1', 'on')
+            _charger_update()
+            self.logger.info(f"EVCC Charger: enable={self._evcc_charger_enabled}")
+            return jsonify({"ok": True, "enabled": self._evcc_charger_enabled})
+        
+        @self.app.route('/api/evcc/charger/enable', methods=['POST', 'PUT'])
+        def evcc_charger_set_enable_post():
+            """Enable/disable heating. EVCC POST body: 'true' or 'false'"""
+            self._evcc_charger_enabled = _parse_body_bool()
+            _charger_update()
+            self.logger.info(f"EVCC Charger: enable={self._evcc_charger_enabled}")
+            return jsonify({"ok": True, "enabled": self._evcc_charger_enabled})
+        
+        @self.app.route('/api/evcc/charger/maxcurrent/<int:value>')
+        def evcc_charger_set_maxcurrent_get(value):
+            """Set max current in A. EVCC GET: /maxcurrent/16"""
+            self._evcc_charger_max_current = max(0, value)
+            _charger_update()
+            active = _charger_get_active_count()
+            self.logger.info(
+                f"EVCC Charger: maxcurrent={value}A → "
+                f"{active} elements ({active * _charger_get_element_power():.0f}W)"
+            )
+            return jsonify({"ok": True, "maxcurrent": value, "active_elements": active})
+        
+        @self.app.route('/api/evcc/charger/maxcurrent', methods=['POST', 'PUT'])
+        def evcc_charger_set_maxcurrent_post():
+            """Set max current in A. EVCC POST body: '16'"""
+            value = _parse_body_int()
+            self._evcc_charger_max_current = max(0, value)
+            _charger_update()
+            active = _charger_get_active_count()
+            self.logger.info(
+                f"EVCC Charger: maxcurrent={value}A → "
+                f"{active} elements ({active * _charger_get_element_power():.0f}W)"
+            )
+            return jsonify({"ok": True, "maxcurrent": value, "active_elements": active})
+        
+        @self.app.route('/api/evcc/charger/setmaxpower/<int:value>')
+        def evcc_charger_set_maxpower_get(value):
+            """Set max heating power in W. EVCC GET: /setmaxpower/4000"""
+            self._evcc_charger_max_power = max(0, value)
+            _charger_update()
+            active = _charger_get_active_count()
+            self.logger.info(
+                f"EVCC Charger: setmaxpower={value}W → "
+                f"{active} elements ({active * _charger_get_element_power():.0f}W)"
+            )
+            return jsonify({"ok": True, "maxpower": value, "active_elements": active})
+        
+        @self.app.route('/api/evcc/charger/setmaxpower', methods=['POST', 'PUT'])
+        def evcc_charger_set_maxpower_post():
+            """Set max heating power in W. EVCC POST body: '4000'"""
+            value = _parse_body_int()
+            self._evcc_charger_max_power = max(0, value)
+            _charger_update()
+            active = _charger_get_active_count()
+            self.logger.info(
+                f"EVCC Charger: setmaxpower={value}W → "
+                f"{active} elements ({active * _charger_get_element_power():.0f}W)"
+            )
+            return jsonify({"ok": True, "maxpower": value, "active_elements": active})
+    
+    def _evcc_watchdog_loop(self):
+        """Background thread: turn off heating if EVCC stops communicating"""
+        while True:
+            time.sleep(60)
+            if self._evcc_last_contact == 0.0:
+                continue  # No contact yet, nothing to watch
+            elapsed = time.monotonic() - self._evcc_last_contact
+            if elapsed > self._evcc_watchdog_timeout and self._evcc_charger_enabled:
+                self.logger.warning(
+                    f"EVCC watchdog: No contact for {elapsed:.0f}s, "
+                    f"turning off all heating elements"
+                )
+                self._evcc_charger_enabled = False
+                self._evcc_charger_max_current = 0
+                self._evcc_charger_max_power = 0
+                if self.heating_system and self.heating_system.hardware:
+                    for p in [{'board': 1, 'port': 0}, {'board': 1, 'port': 1}, {'board': 1, 'port': 2}]:
+                        try:
+                            self.heating_system.hardware.set_output((p['board'], p['port']), False)
+                        except Exception:
+                            pass
     
     def start(self):
         """Start HTTP server in a background thread"""

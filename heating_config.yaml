@@ -253,7 +253,7 @@ heat_exchanger:
 
 # EVCC Integration Configuration
 evcc:
-  enable: true
+  enable: false
   base_url: "http://192.168.191.45:7070"
   timeout: 10
   update_interval: 30
@@ -271,6 +271,10 @@ evcc:
     default_duration_minutes: 15  # Default duration for manual mode
     max_duration_minutes: 60      # Maximum allowed duration
     min_duration_minutes: 5       # Minimum allowed duration
+  # Charger API - EVCC controls heating via HTTP plugin
+  charger_api:
+    enable: true
+    temp_sensor: "puffer_k_mitte"  # Sensor for buffer temperature reported to EVCC
 
 # System Data Reporter Configuration (Temperature, Power, Running Hours)
 system_data_reporter:

@@ -125,6 +125,9 @@ class EVCCConfig:
     default_duration_minutes: int = 15
     max_duration_minutes: int = 60
     min_duration_minutes: int = 5
+    # Charger API (EVCC HTTP plugin interface)
+    charger_api_enable: bool = False
+    charger_api_temp_sensor: str = "puffer_k_mitte"
 
 @dataclass
 class SystemDataReporterConfig:
@@ -295,6 +298,11 @@ class HeatingConfig:
             evcc_config.default_duration_minutes = manual_mode_data.get('default_duration_minutes', 15)
             evcc_config.max_duration_minutes = manual_mode_data.get('max_duration_minutes', 60)
             evcc_config.min_duration_minutes = manual_mode_data.get('min_duration_minutes', 5)
+            
+            # Charger API Configuration (EVCC HTTP plugin interface)
+            charger_api_data = evcc_data.get('charger_api', {})
+            evcc_config.charger_api_enable = charger_api_data.get('enable', False)
+            evcc_config.charger_api_temp_sensor = charger_api_data.get('temp_sensor', 'puffer_k_mitte')
         
         # Extract System Data Reporter configuration
         system_reporter_config = SystemDataReporterConfig()
